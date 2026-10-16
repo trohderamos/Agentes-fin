@@ -144,6 +144,12 @@ class BrokerFalso(Broker):
     def precio_subyacente(self, simbolo):
         return self.cierres[self.hoy]
 
+    def posiciones(self):
+        return []
+
+    def historial_patrimonio(self, desde):
+        return []
+
     def barras_diarias(self, simbolo, desde, hasta, ajustadas=True):
         return [barra(d, self.cierres[d], rango=4) for d in self.dias if desde <= d <= hasta]
 

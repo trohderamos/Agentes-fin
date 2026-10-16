@@ -4,7 +4,7 @@ Reglas de seguridad de este módulo:
 - La URL de trading está fija en el entorno paper y no se puede cambiar.
 - Antes de devolver cualquier dato se verifica que la cuenta sea paper; si no
   lo es, se lanza CuentaRealDetectada y no se hace nada más.
-- Solo se hacen pedidos GET. En la fase 1 no existe forma de enviar órdenes.
+- Solo se hacen pedidos GET. Todavía no existe forma de enviar órdenes.
 - Las claves se leen de ALPACA_API_KEY y ALPACA_SECRET_KEY y nunca se imprimen.
 """
 
@@ -25,6 +25,9 @@ from broker.base import (
     CuentaRealDetectada,
     ErrorBroker,
     FaltanClaves,
+    Noticia,
+    Posicion,
+    PuntoPatrimonio,
 )
 
 URL_TRADING_PAPER = "https://paper-api.alpaca.markets"
@@ -68,6 +71,10 @@ def _float(valor: Any) -> Optional[float]:
         return float(valor)
     except (TypeError, ValueError):
         return None
+
+
+def _texto_plano(html: str) -> str:
+    return " ".join(re.sub(r"<[^>]+>", " ", html).split())
 
 
 class AlpacaPaper(Broker):
@@ -149,7 +156,64 @@ class AlpacaPaper(Broker):
             poder_de_compra_opciones=_float(datos.get("options_buying_power")),
             nivel_opciones=int(nivel) if nivel is not None else None,
             es_paper=True,
+            patrimonio_cierre_anterior=_float(datos.get("last_equity")),
         )
+
+    def posiciones(self) -> list[Posicion]:
+        self._verificar_paper()
+        return [
+            Posicion(
+                simbolo=str(p.get("symbol", "")),
+                clase=str(p.get("asset_class", "")),
+                cantidad=_float(p.get("qty")) or 0.0,
+                valor_mercado=_float(p.get("market_value")),
+                resultado_no_realizado=_float(p.get("unrealized_pl")),
+            )
+            for p in self._get(URL_TRADING_PAPER, "/v2/positions") or []
+        ]
+
+    def historial_patrimonio(self, desde: date) -> list[PuntoPatrimonio]:
+        self._verificar_paper()
+        datos = self._get(
+            URL_TRADING_PAPER,
+            "/v2/account/portfolio/history",
+            {"period": f"{max((date.today() - desde).days + 1, 1)}D", "timeframe": "1D"},
+        )
+        puntos = []
+        for ts, patrimonio in zip(datos.get("timestamp") or [], datos.get("equity") or []):
+            valor = _float(patrimonio)
+            # Antes de que existiera la cuenta Alpaca devuelve 0 o null.
+            if not valor:
+                continue
+            fecha = datetime.fromtimestamp(int(ts), timezone.utc).date()
+            if fecha < desde:
+                continue
+            puntos.append(PuntoPatrimonio(fecha=fecha, patrimonio=valor))
+        return puntos
+
+    def noticias(self, simbolos: list[str], desde: date, limite: int = 50) -> list[Noticia]:
+        self._verificar_paper()
+        datos = self._get(
+            URL_DATOS,
+            "/v1beta1/news",
+            {
+                "symbols": ",".join(simbolos),
+                "start": desde.isoformat(),
+                "limit": min(limite, 50),
+                "sort": "desc",
+            },
+        )
+        return [
+            Noticia(
+                fecha=str(n.get("created_at", "")),
+                titular=str(n.get("headline", "")).strip(),
+                resumen=_texto_plano(n.get("summary") or "")[:500],
+                fuente=str(n.get("source", "")),
+                url=str(n.get("url", "")),
+                simbolos=tuple(n.get("symbols") or ()),
+            )
+            for n in datos.get("news") or []
+        ]
 
     def precio_subyacente(self, simbolo: str) -> Optional[float]:
         self._verificar_paper()

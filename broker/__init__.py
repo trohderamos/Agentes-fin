@@ -13,6 +13,9 @@ from broker.base import (
     CuentaRealDetectada,
     ErrorBroker,
     FaltanClaves,
+    Noticia,
+    Posicion,
+    PuntoPatrimonio,
 )
 
 
@@ -32,5 +35,8 @@ __all__ = [
     "CuentaRealDetectada",
     "ErrorBroker",
     "FaltanClaves",
+    "Noticia",
+    "Posicion",
+    "PuntoPatrimonio",
     "crear_broker",
 ]

@@ -4,8 +4,7 @@ El resto del sistema (agentes, datos, orquestador) solo conoce esta interfaz.
 Para pasar de Alpaca a tastytrade se escribe otro adaptador que la cumpla y
 no se toca nada más.
 
-En la fase 1 la interfaz es de solo lectura: no hay ningún método para enviar
-órdenes.
+La interfaz es de solo lectura: no hay ningún método para enviar órdenes.
 """
 
 from __future__ import annotations
@@ -39,6 +38,7 @@ class Cuenta:
     poder_de_compra_opciones: Optional[float]
     nivel_opciones: Optional[int]
     es_paper: bool
+    patrimonio_cierre_anterior: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -76,8 +76,35 @@ class ContratoOpcion:
         return round((self.bid + self.ask) / 2, 4)
 
 
+@dataclass(frozen=True)
+class Posicion:
+    simbolo: str
+    clase: str  # "us_option", "us_equity", ...
+    cantidad: float
+    valor_mercado: Optional[float]
+    resultado_no_realizado: Optional[float]
+
+
+@dataclass(frozen=True)
+class PuntoPatrimonio:
+    """Patrimonio de la cuenta al cierre de un día."""
+
+    fecha: date
+    patrimonio: float
+
+
+@dataclass(frozen=True)
+class Noticia:
+    fecha: str  # ISO con hora, UTC
+    titular: str
+    resumen: str
+    fuente: str
+    url: str
+    simbolos: tuple[str, ...]
+
+
 class Broker(ABC):
-    """Lo que el sistema necesita de un bróker en la fase 1 (solo lectura)."""
+    """Lo que el sistema necesita de un bróker (solo lectura)."""
 
     nombre: str
 
@@ -110,3 +137,22 @@ class Broker(ABC):
         self, simbolos: list[str], desde: date, hasta: date
     ) -> dict[str, list[Barra]]:
         """Barras diarias de contratos de opciones (también vencidos), por símbolo OCC."""
+
+    @abstractmethod
+    def posiciones(self) -> list[Posicion]:
+        """Posiciones abiertas de la cuenta."""
+
+    @abstractmethod
+    def historial_patrimonio(self, desde: date) -> list[PuntoPatrimonio]:
+        """Patrimonio al cierre de cada día desde la fecha pedida.
+
+        Los días en que la cuenta todavía no existía no se devuelven.
+        """
+
+    def noticias(self, simbolos: list[str], desde: date, limite: int = 50) -> list[Noticia]:
+        """Noticias recientes de los símbolos, de la más nueva a la más vieja.
+
+        Opcional: un bróker sin noticias devuelve una lista vacía y el agente
+        News trabaja con la búsqueda web.
+        """
+        return []
