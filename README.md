@@ -8,7 +8,7 @@ Sistema de agentes que vende primas de opciones (plazo de 7 a 21 días, strike v
 |---|---|
 | `broker/` | La única pieza que habla con el bróker. `base.py` define la interfaz; `alpaca_paper.py` es el adaptador de Alpaca paper. Para migrar a tastytrade se agrega otro adaptador acá y no se toca nada más. |
 | `datos/` | Datos y cálculos para los agentes: cadena de opciones de 7 a 21 días, ATR, volatilidad realizada, IV e IV rank, movimiento esperado y el calendario de eventos (`eventos.csv`). |
-| `agentes/` | Los nueve agentes (research, consejo y jefe). En la fase 3 están los cuatro de research. Ver `agentes/README.md`. |
+| `agentes/` | Los nueve agentes (research, consejo y jefe). Research (fase 3), consejo y jefe (fase 4). Ver `agentes/README.md`. |
 | `.claude/skills/` | Copia de los skills del proyecto. Cada agente carga los suyos desde acá. |
 | `bitacora/` | Registro de trades. |
 | `orquestador.py` | Punto de entrada. |
@@ -20,6 +20,8 @@ Las claves se leen de las variables de entorno `ALPACA_API_KEY`, `ALPACA_SECRET_
 
 ```bash
 pip install -r requirements.txt
+python orquestador.py ciclo                  # research, consejo y jefe; la decisión queda en bitacora/decisiones.jsonl
+python orquestador.py ciclo --sin-modelo     # el mismo ciclo con reglas fijas, sin llamar a Claude
 python orquestador.py research               # agentes de research sobre SPY: de 1 a 3 candidatos o "no hay trade hoy"
 python orquestador.py research --sin-modelo  # el mismo circuito sin llamar a Claude (solo los cálculos)
 python orquestador.py informe                # informe de datos de SPY del día (se guarda en datos/informes/)

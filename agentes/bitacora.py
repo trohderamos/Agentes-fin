@@ -1,10 +1,11 @@
-"""Lectura de la bitácora de trades (bitacora/trades.jsonl).
+"""Bitácora: trades (bitacora/trades.jsonl) y decisiones (bitacora/decisiones.jsonl).
 
-Una línea JSON por trade. En la fase 3 solo se lee: el freno por drawdown y
-Risk necesitan los trades abiertos y los últimos cerrados. La escritura llega
-con el consejo y el jefe (fase 4).
+trades.jsonl tiene una línea JSON por trade abierto o cerrado en el bróker.
+El freno por drawdown y Risk la leen; se escribe cuando haya órdenes (fase 5).
+decisiones.jsonl tiene una línea por cada ciclo de research, consejo y jefe,
+se opere o no (fase 4).
 
-Campos que se usan acá:
+Campos de trades.jsonl que se usan acá:
     id, estado ("abierto" o "cerrado"), subyacente, simbolos (lista OCC),
     perdida_maxima (dólares, total del trade), delta, gamma, vega (de la
     posición, total), resultado (dólares, al cerrar), cerrado_el (AAAA-MM-DD).
@@ -69,3 +70,21 @@ def leer_trades(archivo: Path = ARCHIVO) -> list[TradeRegistrado]:
         except (KeyError, TypeError, ValueError) as e:
             raise BitacoraInvalida(f"Línea {n} de {archivo.name} inválida: {e}") from None
     return trades
+
+
+# --- Decisiones (fase 4) ---------------------------------------------------
+
+ARCHIVO_DECISIONES = Path(__file__).parent.parent / "bitacora" / "decisiones.jsonl"
+
+
+def registrar_decision(registro: dict, archivo: Path = ARCHIVO_DECISIONES) -> None:
+    """Agrega una línea por ciclo, se opere o no. Nunca reescribe las anteriores."""
+    archivo.parent.mkdir(parents=True, exist_ok=True)
+    with archivo.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(registro, ensure_ascii=False, default=str) + "\n")
+
+
+def leer_decisiones(archivo: Path = ARCHIVO_DECISIONES) -> list[dict]:
+    if not archivo.exists():
+        return []
+    return [json.loads(l) for l in archivo.read_text(encoding="utf-8").splitlines() if l.strip()]

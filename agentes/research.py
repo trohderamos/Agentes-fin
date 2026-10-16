@@ -161,7 +161,8 @@ En 'eventos' poné impacto "alto" a: earnings del activo, decisión de la Fed, C
 los earnings de esas empresas de mayor peso. Todo evento de impacto alto descarta los vencimientos
 que lo incluyan. Marcá estimada la fecha que la empresa no confirmó. Separá hechos de rumores."""
 
-TAREA_STRATEGY = """Elegí de 0 a 3 candidatos de la lista 'candidatos', ordenados del mejor al peor, y decí
+TAREA_STRATEGY = """Si viene 'ajustes_pedidos_por_el_jefe', es una nueva vuelta: elegí teniendo en cuenta esos cambios.
+Elegí de 0 a 3 candidatos de la lista 'candidatos', ordenados del mejor al peor, y decí
 cuál preferís y por qué. Solo podés elegir por 'id' de esa lista: los strikes, créditos y griegas ya están
 calculados con la cadena real y no se pueden cambiar. Tené en cuenta los informes de Chart y News, el
 backtest aproximado de cada estructura y el retorno sobre riesgo (menos de 20-25% rara vez compensa).
@@ -367,7 +368,18 @@ class Research:
         self.costo += respuesta.costo_usd or 0.0
         return respuesta.datos
 
-    async def correr(self, informe: Optional[Informe] = None, trades: Optional[list[TradeRegistrado]] = None) -> ResultadoResearch:
+    async def correr(
+        self,
+        informe: Optional[Informe] = None,
+        trades: Optional[list[TradeRegistrado]] = None,
+        ajustes: Optional[list[str]] = None,
+        previo: Optional[ResultadoResearch] = None,
+    ) -> ResultadoResearch:
+        """Corre el equipo de research.
+
+        `ajustes` son los cambios que pidió el jefe al devolver un trade; con
+        `previo` se reusan los informes de Chart y News de la vuelta anterior.
+        """
         hoy = self.hoy
         cuenta = self.broker.cuenta()
         trades = leer_trades() if trades is None else trades
@@ -411,7 +423,9 @@ class Research:
         informe_dict = informe.a_dict()
 
         # Chart y News en paralelo.
-        if self.modelo is None:
+        if previo is not None and previo.chart is not None and previo.news is not None:
+            r.chart, r.news = previo.chart, previo.news
+        elif self.modelo is None:
             r.chart = _chart_sin_modelo(informe, soportes, resistencias)
             r.news = _news_sin_modelo(eventos)
         else:
@@ -504,6 +518,7 @@ class Research:
                             "candidatos": [c.a_dict() for c in validos],
                             "descartados_por_limites": r.descartados,
                             "backtest_aproximado": r.backtests,
+                            "ajustes_pedidos_por_el_jefe": ajustes or [],
                         }
                     ),
                     esquema=ESQUEMA_STRATEGY,

@@ -3,8 +3,8 @@
 Nueve agentes en tres niveles:
 
 1. **Research** (4): Chart, News, Strategy y Risk. Risk tiene veto antes del consejo. El backtest es una herramienta compartida, no un agente. **Fase 3: listos.**
-2. **Consejo** (4): ejecutor de primas, escéptico, gestor de posición, y liquidez y costos. Debaten dos rondas. Fase 4.
-3. **Jefe** (1): escucha el debate y decide solo si aprueba, ajusta (vuelve a research) o rechaza. Fase 4.
+2. **Consejo** (4): ejecutor de primas, escéptico, gestor de posición, y liquidez y costos. Debaten dos rondas. **Fase 4: listos.**
+3. **Jefe** (1): escucha el debate y decide solo si aprueba, ajusta (vuelve a research) o rechaza. **Fase 4: listo.**
 
 Los agentes nunca hablan con el bróker directamente: piden datos a `datos/` y al bróker a través de la interfaz de `broker/base.py`.
 
@@ -39,3 +39,18 @@ El freno y Risk leen `bitacora/trades.jsonl` (formato en `agentes/bitacora.py`).
 ### Modelo y costo
 
 Por defecto `claude-opus-5-5` (se cambia con `--modelo` o `AGENTES_MODELO`) y un tope de 1 dólar por agente y por corrida (`AGENTES_PRESUPUESTO_USD`). El costo de cada corrida se muestra al final.
+
+## Consejo y jefe (`python orquestador.py ciclo`)
+
+El ciclo corre research y, si hay candidatos, el consejo debate el preferido en dos rondas y el jefe decide. Todo queda en `bitacora/decisiones.jsonl` (una línea por ciclo, se opere o no) y el detalle en `datos/ciclos/`. **No se envía ninguna orden**: eso llega en la fase 5.
+
+| Paso | Quién | Skill | Qué hace |
+|---|---|---|---|
+| 1 | Cálculos (código) | consejo-opciones-primas | Costos (comisiones y slippage, contra el 10% y 15% del crédito), escenarios de pérdida con un movimiento de 2 ATR y de 3% en 2 días, plan de salida por defecto (50% de ganancia, stop en 2 veces el crédito, cierre el día hábil anterior al vencimiento) y una orden por defecto. |
+| 2 | Ronda 1, los 4 en paralelo | consejo-opciones-primas | Cada uno da su postura y vota A FAVOR, AJUSTAR o EN CONTRA, con confianza. El ejecutor arma la orden; el gestor, el plan de salida. |
+| 3 | Ronda 2, los 4 en paralelo | consejo-opciones-primas | Cada uno lee las posturas de la ronda 1, responde y da su voto final. |
+| 4 | Jefe | jefe-opciones-primas | Decide solo: APROBAR (con orden y plan), AJUSTAR (vuelve a Strategy y Risk con los cambios; Chart y News se reusan) o RECHAZAR. Máximo dos vueltas. |
+
+Reglas que se aseguran en código, decida lo que decida el jefe: la orden aprobada tiene que ser un candidato de research sin veto, con contratos dentro del 2% del capital y precio límite no mayor que el punto medio; sin plan de salida escrito no se aprueba; la cuenta tiene que ser paper. Si algo no cumple, la decisión pasa a AJUSTAR y, en la última vuelta, a RECHAZAR.
+
+Con `--sin-modelo` el consejo y el jefe siguen reglas fijas (sirve para probar el circuito, no para decidir).

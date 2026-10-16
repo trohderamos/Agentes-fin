@@ -98,3 +98,55 @@ def formatear_research(r: ResultadoResearch) -> str:
         lineas += ["", f"Costo de los modelos: {_n(r.costo_usd, 4)} USD"]
     lineas += ["", "Research no envía órdenes."]
     return "\n".join(lineas)
+
+
+def formatear_ciclo(ciclo) -> str:
+    from agentes.consejo import NOMBRES
+
+    partes = []
+    for v in ciclo.vueltas:
+        partes.append(f"======== VUELTA {v.numero} ========")
+        partes.append(formatear_research(v.research))
+        if v.debate is not None:
+            d = v.debate
+            c = d.costos
+            partes += [
+                "",
+                f"CONSEJO sobre {d.trade['candidato']['id']}" + ("" if d.con_modelo else "  (sin modelo: reglas fijas)"),
+                f"  Costos: {c['costo_total_usd']} USD ({(c['costos_sobre_credito'] or 0):.0%} del crédito) · "
+                f"spread compra-venta {(c['spread_compra_venta_sobre_credito'] or 0):.0%} del crédito",
+            ]
+            for e in d.escenarios:
+                partes.append(f"  Escenario: {e['escenario']} → {e['resultado_por_contrato_usd']} USD por contrato")
+            for i, ronda in enumerate(d.rondas, 1):
+                partes.append(f"  Ronda {i}:")
+                for m, p in ronda.items():
+                    extra = f" Cambio: {p['cambio_propuesto']}" if p.get("cambio_propuesto") else ""
+                    partes.append(f"    {NOMBRES[m]}: {p.get('voto')} ({p.get('confianza')}). {p.get('postura', '')}{extra}")
+                    if p.get("respuesta_a_otros"):
+                        partes.append(f"      Responde: {p['respuesta_a_otros']}")
+                    if p.get("orden_invalida"):
+                        partes.append(f"      Orden descartada: {p['orden_invalida']}")
+        dec = v.decision
+        partes += ["", f"JEFE: {dec.get('decision')}" + (" (sin modelo: regla fija)" if dec.get("sin_modelo") else "")]
+        partes.append(f"  Razón: {dec.get('razon_principal')}")
+        if dec.get("objecion_que_mas_peso"):
+            partes.append(f"  Objeción que más pesó: {dec['objecion_que_mas_peso']}")
+        for x in dec.get("correcciones", []):
+            partes.append(f"  Corrección en código: {x}")
+        if dec.get("orden_final"):
+            o = dec["orden_final"]
+            partes.append(
+                f"  Orden final: {o['id']} · {o['contratos']} contrato(s) · crédito límite {o['precio_limite']:.2f}"
+            )
+            for k, texto in (dec.get("plan_salida") or {}).items():
+                partes.append(f"  Plan ({k.replace('_', ' ')}): {texto}")
+        if dec.get("cambios_pedidos"):
+            partes.append("  Cambios pedidos: " + "; ".join(dec["cambios_pedidos"]))
+        if dec.get("que_revisar_proximo_ciclo"):
+            partes.append(f"  Revisar en el próximo ciclo: {dec['que_revisar_proximo_ciclo']}")
+        partes.append("")
+    if ciclo.con_modelo:
+        partes.append(f"Costo total de los modelos: {ciclo.costo_usd:.4f} USD")
+    partes.append("No se envió ninguna orden: la decisión quedó en la bitácora.")
+    return "\n".join(partes)
