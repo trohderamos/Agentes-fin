@@ -12,12 +12,13 @@ from __future__ import annotations
 
 import os
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
 
 import requests
 
 from broker.base import (
+    Barra,
     Broker,
     ContratoOpcion,
     Cuenta,
@@ -32,6 +33,9 @@ URL_DATOS = "https://data.alpaca.markets"
 # Las cuentas paper de Alpaca tienen número que empieza con "PA".
 PREFIJO_CUENTA_PAPER = "PA"
 
+# Alpaca acepta hasta 100 símbolos por pedido de barras de opciones.
+MAX_SIMBOLOS_POR_PEDIDO = 100
+
 # Símbolo OCC: raíz + AAMMDD + C/P + strike * 1000 en 8 dígitos.
 _OCC = re.compile(r"^(?P<raiz>[A-Z.]{1,6})(?P<fecha>\d{6})(?P<tipo>[CP])(?P<strike>\d{8})$")
 
@@ -44,6 +48,17 @@ def parsear_simbolo_occ(simbolo: str) -> tuple[str, date, str, float]:
     tipo = "call" if m["tipo"] == "C" else "put"
     strike = int(m["strike"]) / 1000
     return m["raiz"], vencimiento, tipo, strike
+
+
+def _fin_sip(hasta: date) -> str:
+    """Fin del pedido de barras con feed SIP.
+
+    El plan gratuito de Alpaca no da datos SIP de los últimos 15 minutos, así
+    que el fin se recorta a 16 minutos atrás.
+    """
+    tope = datetime.now(timezone.utc) - timedelta(minutes=16)
+    fin = datetime.combine(hasta + timedelta(days=1), datetime.min.time(), timezone.utc)
+    return min(fin, tope).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _float(valor: Any) -> Optional[float]:
@@ -99,11 +114,12 @@ class AlpacaPaper(Broker):
             resp = self._sesion.get(url, params=params, timeout=self._timeout)
         except requests.RequestException as e:
             raise ErrorBroker(f"No se pudo conectar con {base}: {type(e).__name__}") from None
-        if resp.status_code in (401, 403):
+        if resp.status_code == 401:
             raise ErrorBroker(
-                f"Alpaca rechazó las claves ({resp.status_code}) en {ruta}. "
-                "Revisá que sean las de la cuenta paper."
+                f"Alpaca rechazó las claves (401) en {ruta}. Revisá que sean las de la cuenta paper."
             )
+        if resp.status_code == 403:
+            raise ErrorBroker(f"Alpaca no permite este pedido (403) en {ruta}: {resp.text[:200]}")
         if resp.status_code >= 400:
             raise ErrorBroker(f"Alpaca respondió {resp.status_code} en {ruta}: {resp.text[:200]}")
         return resp.json()
@@ -166,6 +182,63 @@ class AlpacaPaper(Broker):
             params["page_token"] = token
         contratos.sort(key=lambda c: (c.vencimiento, c.tipo, c.strike))
         return contratos
+
+    def barras_diarias(
+        self, simbolo: str, desde: date, hasta: date, ajustadas: bool = True
+    ) -> list[Barra]:
+        self._verificar_paper()
+        params: dict[str, Any] = {
+            "timeframe": "1Day",
+            "start": desde.isoformat(),
+            "end": _fin_sip(hasta),
+            "adjustment": "all" if ajustadas else "raw",
+            "feed": "sip",
+            "limit": 10000,
+        }
+        barras: list[Barra] = []
+        while True:
+            datos = self._get(URL_DATOS, f"/v2/stocks/{simbolo}/bars", params)
+            barras.extend(self._barra(b) for b in datos.get("bars") or [])
+            token = datos.get("next_page_token")
+            if not token:
+                break
+            params["page_token"] = token
+        return barras
+
+    def barras_opciones(
+        self, simbolos: list[str], desde: date, hasta: date
+    ) -> dict[str, list[Barra]]:
+        self._verificar_paper()
+        resultado: dict[str, list[Barra]] = {}
+        unicos = sorted(set(simbolos))
+        for i in range(0, len(unicos), MAX_SIMBOLOS_POR_PEDIDO):
+            params: dict[str, Any] = {
+                "symbols": ",".join(unicos[i : i + MAX_SIMBOLOS_POR_PEDIDO]),
+                "timeframe": "1Day",
+                "start": desde.isoformat(),
+                "end": hasta.isoformat(),
+                "limit": 10000,
+            }
+            while True:
+                datos = self._get(URL_DATOS, "/v1beta1/options/bars", params)
+                for simbolo, barras in (datos.get("bars") or {}).items():
+                    resultado.setdefault(simbolo, []).extend(self._barra(b) for b in barras)
+                token = datos.get("next_page_token")
+                if not token:
+                    break
+                params["page_token"] = token
+        return resultado
+
+    @staticmethod
+    def _barra(b: dict) -> Barra:
+        return Barra(
+            fecha=date.fromisoformat(str(b["t"])[:10]),
+            apertura=float(b["o"]),
+            maximo=float(b["h"]),
+            minimo=float(b["l"]),
+            cierre=float(b["c"]),
+            volumen=float(b.get("v") or 0),
+        )
 
     @staticmethod
     def _contrato(simbolo: str, snap: dict) -> ContratoOpcion:

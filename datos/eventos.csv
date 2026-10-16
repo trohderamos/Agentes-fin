@@ -1,0 +1,11 @@
+fecha,hora_et,tipo,evento,fuente
+2026-10-28,14:00,fed,Decisión de tasas de la Fed (FOMC 27-28 oct),Calendario FOMC de la Reserva Federal
+2026-11-06,08:30,empleo,Informe de empleo (nóminas de octubre),Calendario de publicaciones del BLS
+2026-11-10,08:30,inflacion,CPI de octubre,Calendario de publicaciones del BLS
+2026-12-04,08:30,empleo,Informe de empleo (nóminas de noviembre),Calendario de publicaciones del BLS
+2026-12-09,14:00,fed,Decisión de tasas de la Fed con proyecciones (FOMC 8-9 dic),Calendario FOMC de la Reserva Federal
+2026-12-10,08:30,inflacion,CPI de noviembre,Calendario de publicaciones del BLS
+2026-12-18,,vencimiento,Vencimiento trimestral (triple witching),Tercer viernes de diciembre
+2026-12-18,,dividendo,Fecha ex-dividendo estimada de SPY,Estimada: SPY suele cortar el tercer viernes de mar/jun/sep/dic
+2027-01-27,14:00,fed,Decisión de tasas de la Fed (FOMC 26-27 ene),Calendario FOMC tentativo 2027
+2027-03-17,14:00,fed,Decisión de tasas de la Fed con proyecciones (FOMC 16-17 mar),Calendario FOMC tentativo 2027

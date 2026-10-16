@@ -6,6 +6,7 @@ se cambia esta función.
 """
 
 from broker.base import (
+    Barra,
     Broker,
     ContratoOpcion,
     Cuenta,
@@ -24,6 +25,7 @@ def crear_broker(nombre: str = "alpaca-paper", **opciones) -> Broker:
 
 
 __all__ = [
+    "Barra",
     "Broker",
     "ContratoOpcion",
     "Cuenta",

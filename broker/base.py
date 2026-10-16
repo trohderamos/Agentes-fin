@@ -42,6 +42,18 @@ class Cuenta:
 
 
 @dataclass(frozen=True)
+class Barra:
+    """Barra diaria (OHLC y volumen)."""
+
+    fecha: date
+    apertura: float
+    maximo: float
+    minimo: float
+    cierre: float
+    volumen: float
+
+
+@dataclass(frozen=True)
 class ContratoOpcion:
     simbolo: str
     subyacente: str
@@ -82,3 +94,19 @@ class Broker(ABC):
         self, subyacente: str, vence_desde: date, vence_hasta: date
     ) -> list[ContratoOpcion]:
         """Contratos con vencimiento entre las dos fechas, inclusive."""
+
+    @abstractmethod
+    def barras_diarias(
+        self, simbolo: str, desde: date, hasta: date, ajustadas: bool = True
+    ) -> list[Barra]:
+        """Barras diarias del subyacente.
+
+        Ajustadas por splits y dividendos para indicadores; sin ajustar cuando
+        hay que compararlas con strikes de opciones.
+        """
+
+    @abstractmethod
+    def barras_opciones(
+        self, simbolos: list[str], desde: date, hasta: date
+    ) -> dict[str, list[Barra]]:
+        """Barras diarias de contratos de opciones (también vencidos), por símbolo OCC."""

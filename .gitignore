@@ -4,3 +4,5 @@ __pycache__/
 .env
 bitacora/*.jsonl
 bitacora/*.csv
+datos/cache/
+datos/informes/

@@ -1,9 +1,9 @@
 """Punto de entrada del sistema de agentes.
 
-Fase 1: solo lectura. Muestra la cuenta paper y la cadena de opciones del
-subyacente en la ventana de 7 a 21 días. No envía órdenes.
+Por ahora es de solo lectura: no envía órdenes.
 
 Uso:
+    python orquestador.py informe                # informe de datos de SPY del día
     python orquestador.py estado                 # cuenta + cadena de SPY
     python orquestador.py estado --simbolo QQQ
     python orquestador.py estado --todo          # toda la cadena, sin filtro de delta
@@ -13,10 +13,13 @@ Uso:
 from __future__ import annotations
 
 import argparse
+import json
 import sys
+from pathlib import Path
 from typing import Optional
 
 from broker import Broker, ContratoOpcion, Cuenta, CuentaRealDetectada, ErrorBroker, crear_broker
+from datos.informe import formatear_informe, generar_informe
 from datos.cadena import DIAS_MAX, DIAS_MIN, Vencimiento, cadena_en_ventana, filtrar_por_delta
 
 
@@ -99,6 +102,20 @@ def cmd_estado(broker: Broker, args: argparse.Namespace) -> None:
     print("Fase 1: solo lectura. No se envió ninguna orden.")
 
 
+CARPETA_INFORMES = Path(__file__).parent / "datos" / "informes"
+
+
+def cmd_informe(broker: Broker, args: argparse.Namespace) -> None:
+    broker.cuenta()  # verifica que sea paper antes de pedir nada más
+    informe = generar_informe(broker, args.simbolo.upper())
+    print(formatear_informe(informe))
+    if not args.sin_guardar:
+        CARPETA_INFORMES.mkdir(parents=True, exist_ok=True)
+        ruta = CARPETA_INFORMES / f"{informe.subyacente}-{informe.fecha.isoformat()}.json"
+        ruta.write_text(json.dumps(informe.a_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"\nGuardado en {ruta.relative_to(Path(__file__).parent)}")
+
+
 def armar_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Agentes de venta de primas (fase 1: solo lectura).")
     p.add_argument(
@@ -117,6 +134,11 @@ def armar_parser() -> argparse.ArgumentParser:
     e.add_argument("--delta-max", type=float, default=0.20)
     e.add_argument("--todo", action="store_true", help="Muestra todos los strikes.")
     e.set_defaults(func=cmd_estado)
+
+    i = sub.add_parser("informe", help="Informe de datos del día: precio, ATR, IV rank, eventos.")
+    i.add_argument("--simbolo", default="SPY")
+    i.add_argument("--sin-guardar", action="store_true", help="No guarda el JSON del informe.")
+    i.set_defaults(func=cmd_informe)
     return p
 
 
@@ -128,7 +150,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     except CuentaRealDetectada as e:
         print(f"ALTO: {e}", file=sys.stderr)
         return 2
-    except ErrorBroker as e:
+    except (ErrorBroker, ValueError) as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
     return 0
