@@ -3,6 +3,10 @@
 Por ahora es de solo lectura: no envía órdenes.
 
 Uso:
+    python orquestador.py ciclo                  # research, consejo y jefe; la decisión queda en la bitácora
+    python orquestador.py ciclo --sin-modelo     # mismo ciclo sin llamar a Claude
+    python orquestador.py research               # agentes de research sobre SPY: 1 a 3 candidatos o "no hay trade"
+    python orquestador.py research --sin-modelo  # mismo circuito sin llamar a Claude (solo cálculos)
     python orquestador.py informe                # informe de datos de SPY del día
     python orquestador.py estado                 # cuenta + cadena de SPY
     python orquestador.py estado --simbolo QQQ
@@ -13,12 +17,15 @@ Uso:
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 from broker import Broker, ContratoOpcion, Cuenta, CuentaRealDetectada, ErrorBroker, crear_broker
+from agentes.modelo import ErrorModelo
 from datos.informe import formatear_informe, generar_informe
 from datos.cadena import DIAS_MAX, DIAS_MIN, Vencimiento, cadena_en_ventana, filtrar_por_delta
 
@@ -116,8 +123,51 @@ def cmd_informe(broker: Broker, args: argparse.Namespace) -> None:
         print(f"\nGuardado en {ruta.relative_to(Path(__file__).parent)}")
 
 
+CARPETA_RESEARCH = Path(__file__).parent / "datos" / "research"
+
+
+def cmd_research(broker: Broker, args: argparse.Namespace) -> None:
+    from agentes.formato import formatear_research
+    from agentes.modelo import ModeloClaude
+    from agentes.research import Research
+
+    broker.cuenta()  # verifica que sea paper antes de pedir nada más
+    modelo = None if args.sin_modelo else ModeloClaude(modelo=args.modelo)
+    resultado = asyncio.run(Research(broker, modelo, args.simbolo.upper()).correr())
+    print(formatear_research(resultado))
+    if not args.sin_guardar:
+        CARPETA_RESEARCH.mkdir(parents=True, exist_ok=True)
+        sufijo = "" if modelo else "-sin-modelo"
+        ruta = CARPETA_RESEARCH / f"{resultado.subyacente}-{resultado.fecha.isoformat()}{sufijo}.json"
+        ruta.write_text(json.dumps(resultado.a_dict(), ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+        print(f"\nGuardado en {ruta.relative_to(Path(__file__).parent)}")
+
+
+CARPETA_CICLOS = Path(__file__).parent / "datos" / "ciclos"
+
+
+def cmd_ciclo(broker: Broker, args: argparse.Namespace) -> None:
+    from agentes.ciclo import correr_ciclo
+    from agentes.formato import formatear_ciclo
+    from agentes.modelo import ModeloClaude
+
+    broker.cuenta()  # verifica que sea paper antes de pedir nada más
+    modelo = None if args.sin_modelo else ModeloClaude(modelo=args.modelo)
+    ciclo = asyncio.run(
+        correr_ciclo(broker, modelo, args.simbolo.upper(), guardar_en_bitacora=not args.sin_guardar)
+    )
+    print(formatear_ciclo(ciclo))
+    if not args.sin_guardar:
+        CARPETA_CICLOS.mkdir(parents=True, exist_ok=True)
+        sufijo = "" if modelo else "-sin-modelo"
+        hora = datetime.now().strftime("%H%M%S")
+        ruta = CARPETA_CICLOS / f"{ciclo.subyacente}-{ciclo.fecha.isoformat()}-{hora}{sufijo}.json"
+        ruta.write_text(json.dumps(ciclo.a_dict(), ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+        print(f"\nGuardado en {ruta.relative_to(Path(__file__).parent)} y en bitacora/decisiones.jsonl")
+
+
 def armar_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="Agentes de venta de primas (fase 1: solo lectura).")
+    p = argparse.ArgumentParser(description="Agentes de venta de primas (solo lectura: no envía órdenes).")
     p.add_argument(
         "--feed",
         default="indicative",
@@ -139,6 +189,22 @@ def armar_parser() -> argparse.ArgumentParser:
     i.add_argument("--simbolo", default="SPY")
     i.add_argument("--sin-guardar", action="store_true", help="No guarda el JSON del informe.")
     i.set_defaults(func=cmd_informe)
+
+    from agentes import config
+
+    r = sub.add_parser("research", help="Agentes de research: 1 a 3 candidatos o 'no hay trade hoy'.")
+    r.add_argument("--simbolo", default="SPY")
+    r.add_argument("--sin-modelo", action="store_true", help="No llama a Claude: solo los cálculos en código.")
+    r.add_argument("--modelo", default=config.MODELO, help="Modelo de Claude para los agentes.")
+    r.add_argument("--sin-guardar", action="store_true", help="No guarda el JSON del resultado.")
+    r.set_defaults(func=cmd_research)
+
+    c = sub.add_parser("ciclo", help="Research, consejo y jefe. No envía órdenes.")
+    c.add_argument("--simbolo", default="SPY")
+    c.add_argument("--sin-modelo", action="store_true", help="No llama a Claude: reglas fijas.")
+    c.add_argument("--modelo", default=config.MODELO, help="Modelo de Claude para los agentes.")
+    c.add_argument("--sin-guardar", action="store_true", help="No guarda el JSON ni escribe la bitácora.")
+    c.set_defaults(func=cmd_ciclo)
     return p
 
 
@@ -150,7 +216,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     except CuentaRealDetectada as e:
         print(f"ALTO: {e}", file=sys.stderr)
         return 2
-    except (ErrorBroker, ValueError) as e:
+    except (ErrorBroker, ErrorModelo, ValueError) as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
     return 0

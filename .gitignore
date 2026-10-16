@@ -6,3 +6,5 @@ bitacora/*.jsonl
 bitacora/*.csv
 datos/cache/
 datos/informes/
+datos/research/
+datos/ciclos/
