@@ -12,6 +12,7 @@ Sistema de agentes que vende primas de opciones (plazo de 7 a 21 días, strike v
 | `.claude/skills/` | Copia de los skills del proyecto. Cada agente carga los suyos desde acá. |
 | `bitacora/` | Registro de trades. |
 | `orquestador.py` | Punto de entrada. |
+| `scripts/bitacora_git.sh` | Guarda la bitácora en la rama `claude/bitacora-paper`, para que la rutina diaria, que corre cada día en una máquina nueva, no la pierda. |
 | `tests/` | Pruebas sin red. |
 
 ## Uso
@@ -38,6 +39,20 @@ python -m unittest discover -s tests -t .    # pruebas
 ```
 
 Por defecto los precios de opciones vienen del feed `indicative` de Alpaca (gratis, con algo de demora). Con suscripción se puede usar `--feed opra`.
+
+## Rutina diaria
+
+La rutina corre cada día hábil en una máquina nueva, así que la bitácora (que no va en `main`) vive en la rama `claude/bitacora-paper`:
+
+```bash
+scripts/bitacora_git.sh bajar                # trae la bitácora de la rama
+python orquestador.py gestionar --enviar     # cierra lo que pida el plan de salida
+python orquestador.py ciclo                  # research, consejo y jefe con el modelo
+python orquestador.py ejecutar --enviar      # manda a paper la orden si el jefe aprobó
+scripts/bitacora_git.sh subir                # guarda la bitácora en la rama
+```
+
+Sin `ANTHROPIC_API_KEY` la rutina solo gestiona lo abierto: no abre trades con las reglas fijas.
 
 ## Cómo se calcula el IV rank
 
