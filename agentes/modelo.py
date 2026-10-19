@@ -4,8 +4,8 @@ Cada agente es un llamado con su skill en las instrucciones y una salida JSON
 con esquema fijo. Los agentes no tienen herramientas de Claude Code (ni
 archivos ni terminal); News puede usar además la búsqueda web.
 
-La credencial se lee de ANTHROPIC_API_KEY o, si no está, de
-CLAUDE_CODE_OAUTH_TOKEN (contra el plan). Nunca se imprime.
+La credencial se lee de ANTHROPIC_API_KEY o CLAUDE_CODE_OAUTH_TOKEN; sin
+ninguna, se usa la sesión de Claude Code que corre el SDK. Nunca se imprime.
 """
 
 from __future__ import annotations
@@ -71,15 +71,17 @@ _CONFIG_AISLADA = Path(tempfile.gettempdir()) / "agentes-fin-claude"
 
 
 def entorno_aislado() -> dict[str, str]:
-    """Variables para el proceso del SDK: solo ANTHROPIC_API_KEY o CLAUDE_CODE_OAUTH_TOKEN.
+    """Variables para el proceso del SDK, según la credencial disponible.
 
-    El SDK hereda el entorno de quien lo corre. Si se corre dentro de otra
-    sesión de Claude Code, heredaría su configuración y sus credenciales, y
-    los agentes no usarían la credencial del proyecto. Por eso se vacían todas
-    las variables CLAUDE_* y ANTHROPIC_* heredadas y se usa una carpeta de
-    configuración propia, sin credenciales guardadas. Si está la API key se
-    usa esa; si no, el token de `claude setup-token`, que va contra el plan.
+    Con ANTHROPIC_API_KEY, o si no con CLAUDE_CODE_OAUTH_TOKEN (de
+    `claude setup-token`), se vacían las demás variables CLAUDE_* y
+    ANTHROPIC_* heredadas y se usa una carpeta de configuración propia, para
+    que se use solo esa credencial. Sin ninguna de las dos no se aísla nada:
+    el SDK usa la sesión de Claude Code que lo corre (la de la rutina), que va
+    contra el plan del usuario. Lo eligió él el 19 oct 2026.
     """
+    if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")):
+        return {}
     entorno = {k: "" for k in os.environ if k.startswith("CLAUDE") or k.startswith("ANTHROPIC_")}
     _CONFIG_AISLADA.mkdir(parents=True, exist_ok=True)
     entorno["CLAUDE_CONFIG_DIR"] = str(_CONFIG_AISLADA)
@@ -87,7 +89,7 @@ def entorno_aislado() -> dict[str, str]:
         entorno["ANTHROPIC_API_KEY"] = os.environ["ANTHROPIC_API_KEY"]
         entorno["ANTHROPIC_BASE_URL"] = "https://api.anthropic.com"
     else:
-        entorno["CLAUDE_CODE_OAUTH_TOKEN"] = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")
+        entorno["CLAUDE_CODE_OAUTH_TOKEN"] = os.environ["CLAUDE_CODE_OAUTH_TOKEN"]
     return entorno
 
 
@@ -99,8 +101,6 @@ class ModeloClaude:
     """Modelo real con el Claude Agent SDK."""
 
     def __init__(self, modelo: str = config.MODELO, presupuesto_usd: float = config.PRESUPUESTO_AGENTE_USD):
-        if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")):
-            raise ErrorModelo("Falta ANTHROPIC_API_KEY o CLAUDE_CODE_OAUTH_TOKEN en el entorno.")
         self.modelo = modelo
         self.presupuesto_usd = presupuesto_usd
 
@@ -119,7 +119,7 @@ class ModeloClaude:
             max_turns=pedido.max_turnos,
             max_budget_usd=self.presupuesto_usd,
             output_format={"type": "json_schema", "schema": pedido.esquema},
-            # Solo con la credencial del proyecto, nunca con la de la sesión que lo corre.
+            # Con API key u OAuth token, aislado; sin ninguno, con la sesión que lo corre.
             env=entorno_aislado(),
         )
         resultado: Optional[ResultMessage] = None
