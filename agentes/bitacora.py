@@ -43,6 +43,8 @@ class TradeRegistrado:
     abierto_el: Optional[date] = None
     credito: Optional[float] = None
     contratos: int = 1
+    patas: tuple[tuple[str, str], ...] = ()  # (símbolo OCC, "venta" o "compra")
+    vencimiento: Optional[date] = None
 
 
 def leer_trades(archivo: Path = ARCHIVO) -> list[TradeRegistrado]:
@@ -73,6 +75,8 @@ def leer_trades(archivo: Path = ARCHIVO) -> list[TradeRegistrado]:
                     abierto_el=None if not d.get("abierto_el") else date.fromisoformat(d["abierto_el"]),
                     credito=None if d.get("credito") is None else float(d["credito"]),
                     contratos=int(d.get("contratos") or 1),
+                    patas=tuple((str(x["simbolo"]), str(x["lado"])) for x in d.get("patas") or []),
+                    vencimiento=None if not d.get("vencimiento") else date.fromisoformat(d["vencimiento"]),
                 )
             )
         except (KeyError, TypeError, ValueError) as e:
@@ -96,3 +100,22 @@ def leer_decisiones(archivo: Path = ARCHIVO_DECISIONES) -> list[dict]:
     if not archivo.exists():
         return []
     return [json.loads(l) for l in archivo.read_text(encoding="utf-8").splitlines() if l.strip()]
+
+
+def registrar_trade(registro: dict, archivo: Path = ARCHIVO) -> None:
+    """Agrega una línea a trades.jsonl. Para cerrar un trade se agrega otra línea con el mismo id."""
+    archivo.parent.mkdir(parents=True, exist_ok=True)
+    with archivo.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(registro, ensure_ascii=False, default=str) + "\n")
+
+
+ARCHIVO_EJECUCIONES = Path(__file__).parent.parent / "bitacora" / "ejecuciones.jsonl"
+
+
+def registrar_ejecucion(registro: dict, archivo: Path = ARCHIVO_EJECUCIONES) -> None:
+    """Cada intento de enviar o cerrar una orden, se llene o no."""
+    registrar_trade(registro, archivo)
+
+
+def leer_ejecuciones(archivo: Path = ARCHIVO_EJECUCIONES) -> list[dict]:
+    return leer_decisiones(archivo)

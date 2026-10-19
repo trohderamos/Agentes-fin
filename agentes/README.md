@@ -65,3 +65,13 @@ Corre los viernes después del cierre. Arma el informe de la semana para el usua
 4. **Prueba.** Si un cambio toca el delta, el plazo o el ancho, se compara con el backtest el valor actual contra el propuesto.
 
 El informe se guarda en `datos/repasos/`. Con `--sin-modelo` hace todo menos el paso 3.
+
+## Órdenes en paper (`python orquestador.py ejecutar` y `gestionar`)
+
+Sin `--enviar` todo es simulación: no se manda nada al bróker.
+
+**Apertura.** Toma la última decisión aprobada del día que todavía no se ejecutó y pasa el checklist del skill ordenes-paper-alpaca: cuenta paper, decisión con plan de salida, freno en PERMITIDO, todas las patas cotizan, cada pata vendida tiene su protección, pérdida máxima ≤ 2% del capital y dentro del poder de compra, mercado abierto con más de 15 minutos al cierre, y crédito medio actual ≥ el mínimo del jefe. Si algo falla no envía. La orden es una sola orden de varias patas con límite: empieza en el punto medio y baja de a 0.01 (0.02 si el spread es ancho) hasta 3 veces, nunca por debajo del mínimo, esperando 2 minutos en cada precio. Si se llena, el trade queda en `bitacora/trades.jsonl` con sus patas, crédito, deslizamiento y griegas; cada intento queda en `bitacora/ejecuciones.jsonl`.
+
+**Gestión diaria.** Para cada trade abierto decide si cerrar: 50% de ganancia, pérdida de 2 veces el crédito, día hábil anterior al vencimiento, o precio tocando un strike vendido. Los cierres por ganancia no persiguen el precio (hasta medio + 0.03, 3 intentos); los de stop, tiempo o strike suben hasta el precio natural para asegurar la salida. Al cerrar registra el resultado neto de comisiones.
+
+Pendiente de confirmar en la primera orden real en paper: el signo del `limit_price` de las órdenes de varias patas de Alpaca (se asume negativo = crédito, `SIGNO_CREDITO` en `broker/alpaca_paper.py`).

@@ -4,7 +4,9 @@ Reglas de seguridad de este módulo:
 - La URL de trading está fija en el entorno paper y no se puede cambiar.
 - Antes de devolver cualquier dato se verifica que la cuenta sea paper; si no
   lo es, se lanza CuentaRealDetectada y no se hace nada más.
-- Solo se hacen pedidos GET. Todavía no existe forma de enviar órdenes.
+- Las órdenes están bloqueadas salvo que el adaptador se cree con
+  permitir_ordenes=True. Aun así, los únicos pedidos que no son GET van a
+  /v2/orders del entorno paper: enviar o cancelar una orden.
 - Las claves se leen de ALPACA_API_KEY y ALPACA_SECRET_KEY y nunca se imprimen.
 """
 
@@ -24,8 +26,12 @@ from broker.base import (
     Cuenta,
     CuentaRealDetectada,
     ErrorBroker,
+    EstadoOrden,
     FaltanClaves,
     Noticia,
+    OrdenesBloqueadas,
+    PataOrden,
+    Reloj,
     Posicion,
     PuntoPatrimonio,
 )
@@ -35,6 +41,11 @@ URL_DATOS = "https://data.alpaca.markets"
 
 # Las cuentas paper de Alpaca tienen número que empieza con "PA".
 PREFIJO_CUENTA_PAPER = "PA"
+
+# Signo del límite en órdenes de varias patas: según la referencia de Alpaca,
+# un valor negativo es un crédito (se cobra). Se confirma con la primera orden
+# en paper; si resultara al revés, se cambia solo esta constante.
+SIGNO_CREDITO = -1
 
 # Alpaca acepta hasta 100 símbolos por pedido de barras de opciones.
 MAX_SIMBOLOS_POR_PEDIDO = 100
@@ -87,7 +98,9 @@ class AlpacaPaper(Broker):
         feed_opciones: str = "indicative",
         sesion: Optional[requests.Session] = None,
         timeout: float = 15.0,
+        permitir_ordenes: bool = False,
     ) -> None:
+        self._permitir_ordenes = permitir_ordenes
         url_env = os.environ.get("ALPACA_BASE_URL")
         if url_env and url_env.rstrip("/").removesuffix("/v2") != URL_TRADING_PAPER:
             raise CuentaRealDetectada(
@@ -130,6 +143,22 @@ class AlpacaPaper(Broker):
         if resp.status_code >= 400:
             raise ErrorBroker(f"Alpaca respondió {resp.status_code} en {ruta}: {resp.text[:200]}")
         return resp.json()
+
+    def _escribir(self, metodo: str, ruta: str, cuerpo: Optional[dict] = None) -> Any:
+        """POST o DELETE, solo a /v2/orders del entorno paper y solo si se permitió."""
+        if not self._permitir_ordenes:
+            raise OrdenesBloqueadas("El adaptador está en solo lectura: no se envían ni cancelan órdenes.")
+        if not ruta.startswith("/v2/orders"):
+            raise OrdenesBloqueadas(f"Ruta no permitida para escribir: {ruta}")
+        self.cuenta()  # vuelve a verificar que la cuenta sea paper antes de cada escritura
+        url = URL_TRADING_PAPER + ruta
+        try:
+            resp = self._sesion.request(metodo, url, json=cuerpo, timeout=self._timeout)
+        except requests.RequestException as e:
+            raise ErrorBroker(f"No se pudo conectar con Alpaca: {type(e).__name__}") from None
+        if resp.status_code >= 400:
+            raise ErrorBroker(f"Alpaca respondió {resp.status_code} en {ruta}: {resp.text[:300]}")
+        return resp.json() if resp.text else None
 
     def _verificar_paper(self) -> None:
         if not self._cuenta_verificada:
@@ -292,6 +321,81 @@ class AlpacaPaper(Broker):
                     break
                 params["page_token"] = token
         return resultado
+
+    # --- Órdenes (fase 5) ---------------------------------------------------
+
+    def reloj(self) -> Reloj:
+        self._verificar_paper()
+        d = self._get(URL_TRADING_PAPER, "/v2/clock")
+        return Reloj(
+            abierto=bool(d.get("is_open")),
+            ahora=datetime.fromisoformat(str(d["timestamp"]).replace("Z", "+00:00")),
+            proximo_cierre=datetime.fromisoformat(str(d["next_close"]).replace("Z", "+00:00")),
+        )
+
+    def cotizaciones(self, simbolos: list[str]) -> dict[str, ContratoOpcion]:
+        self._verificar_paper()
+        out: dict[str, ContratoOpcion] = {}
+        unicos = sorted(set(simbolos))
+        for i in range(0, len(unicos), MAX_SIMBOLOS_POR_PEDIDO):
+            datos = self._get(
+                URL_DATOS,
+                "/v1beta1/options/snapshots",
+                {"symbols": ",".join(unicos[i : i + MAX_SIMBOLOS_POR_PEDIDO]), "feed": self._feed_opciones},
+            )
+            for simbolo, snap in (datos.get("snapshots") or {}).items():
+                out[simbolo] = self._contrato(simbolo, snap or {})
+        return out
+
+    def enviar_orden_multipata(
+        self, patas: list[PataOrden], contratos: int, limite: float, abrir: bool, id_cliente: str
+    ) -> EstadoOrden:
+        if contratos < 1 or limite <= 0 or not patas:
+            raise ErrorBroker("Orden inválida: hacen falta patas, contratos >= 1 y límite positivo.")
+        intencion = "open" if abrir else "close"
+        legs = []
+        for p in patas:
+            parsear_simbolo_occ(p.simbolo)  # valida el símbolo
+            # Al abrir se vende lo que se vende; al cerrar se invierte cada pata.
+            vende = (p.lado == "venta") == abrir
+            legs.append(
+                {
+                    "symbol": p.simbolo,
+                    "ratio_qty": str(p.ratio),
+                    "side": "sell" if vende else "buy",
+                    "position_intent": f"{'sell' if vende else 'buy'}_to_{intencion}",
+                }
+            )
+        # Al abrir una estructura de crédito se cobra; al cerrarla se paga.
+        precio = SIGNO_CREDITO * limite if abrir else -SIGNO_CREDITO * limite
+        cuerpo = {
+            "order_class": "mleg",
+            "qty": str(contratos),
+            "type": "limit",
+            "limit_price": f"{precio:.2f}",
+            "time_in_force": "day",
+            "client_order_id": id_cliente,
+            "legs": legs,
+        }
+        return self._estado(self._escribir("POST", "/v2/orders", cuerpo))
+
+    def estado_orden(self, id_orden: str) -> EstadoOrden:
+        self._verificar_paper()
+        return self._estado(self._get(URL_TRADING_PAPER, f"/v2/orders/{id_orden}"))
+
+    def cancelar_orden(self, id_orden: str) -> None:
+        self._escribir("DELETE", f"/v2/orders/{id_orden}")
+
+    @staticmethod
+    def _estado(d: dict) -> EstadoOrden:
+        return EstadoOrden(
+            id=str(d.get("id", "")),
+            estado=str(d.get("status", "")),
+            contratos=int(float(d.get("qty") or 0)),
+            contratos_llenados=int(float(d.get("filled_qty") or 0)),
+            precio_promedio=_float(d.get("filled_avg_price")),
+            limite=_float(d.get("limit_price")),
+        )
 
     @staticmethod
     def _barra(b: dict) -> Barra:

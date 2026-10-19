@@ -5,6 +5,9 @@ Por ahora es de solo lectura: no envía órdenes.
 Uso:
     python orquestador.py ciclo                  # research, consejo y jefe; la decisión queda en la bitácora
     python orquestador.py ciclo --sin-modelo     # mismo ciclo sin llamar a Claude
+    python orquestador.py ejecutar               # simula el envío de la orden que aprobó el jefe hoy
+    python orquestador.py ejecutar --enviar      # la envía a la cuenta paper
+    python orquestador.py gestionar [--enviar]   # revisa las posiciones abiertas y cierra según el plan
     python orquestador.py repaso                 # repaso semanal: resultado, trades, errores, fichas y lecciones
     python orquestador.py research               # agentes de research sobre SPY: 1 a 3 candidatos o "no hay trade"
     python orquestador.py research --sin-modelo  # mismo circuito sin llamar a Claude (solo cálculos)
@@ -192,6 +195,27 @@ def cmd_repaso(broker: Broker, args: argparse.Namespace) -> None:
         print(f"\nGuardado en {base.with_suffix('.md').relative_to(Path(__file__).parent)}")
 
 
+def cmd_ejecutar(broker: Broker, args: argparse.Namespace) -> None:
+    from agentes.bitacora import leer_decisiones, leer_ejecuciones, leer_trades
+    from agentes.ejecucion import abrir, decision_pendiente, formatear
+    from datos.cadena import hoy_nueva_york
+
+    hoy = hoy_nueva_york()
+    trades = leer_trades()
+    decision = decision_pendiente(hoy, leer_decisiones(), trades, leer_ejecuciones())
+    if decision is None:
+        print("No hay ninguna orden aprobada hoy pendiente de enviar.")
+        return
+    print(formatear([abrir(broker, decision, hoy, enviar=args.enviar, trades=trades)]))
+
+
+def cmd_gestionar(broker: Broker, args: argparse.Namespace) -> None:
+    from agentes.ejecucion import formatear, gestionar
+    from datos.cadena import hoy_nueva_york
+
+    print(formatear(gestionar(broker, hoy_nueva_york(), enviar=args.enviar)))
+
+
 def armar_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Agentes de venta de primas (solo lectura: no envía órdenes).")
     p.add_argument(
@@ -239,13 +263,22 @@ def armar_parser() -> argparse.ArgumentParser:
     rp.add_argument("--modelo", default=config.MODELO, help="Modelo de Claude para el repaso.")
     rp.add_argument("--sin-guardar", action="store_true", help="No guarda el informe ni las propuestas.")
     rp.set_defaults(func=cmd_repaso)
+
+    ej = sub.add_parser("ejecutar", help="Envía a paper la orden que aprobó el jefe hoy (simula sin --enviar).")
+    ej.add_argument("--enviar", action="store_true", help="Envía la orden de verdad a la cuenta paper.")
+    ej.set_defaults(func=cmd_ejecutar)
+
+    ge = sub.add_parser("gestionar", help="Revisa las posiciones abiertas y cierra según el plan (simula sin --enviar).")
+    ge.add_argument("--enviar", action="store_true", help="Envía las órdenes de cierre a la cuenta paper.")
+    ge.set_defaults(func=cmd_gestionar)
     return p
 
 
 def main(argv: Optional[list[str]] = None) -> int:
     args = armar_parser().parse_args(argv)
     try:
-        broker = crear_broker("alpaca-paper", feed_opciones=args.feed)
+        permitir = bool(getattr(args, "enviar", False))
+        broker = crear_broker("alpaca-paper", feed_opciones=args.feed, permitir_ordenes=permitir)
         args.func(broker, args)
     except CuentaRealDetectada as e:
         print(f"ALTO: {e}", file=sys.stderr)

@@ -14,7 +14,7 @@ Sistema de agentes que vende primas de opciones (plazo de 7 a 21 días, strike v
 | `orquestador.py` | Punto de entrada. |
 | `tests/` | Pruebas sin red. |
 
-## Uso (solo lectura)
+## Uso
 
 Las claves se leen de las variables de entorno `ALPACA_API_KEY`, `ALPACA_SECRET_KEY` y, para los agentes, `ANTHROPIC_API_KEY`. Nunca van en el código.
 
@@ -22,6 +22,10 @@ Las claves se leen de las variables de entorno `ALPACA_API_KEY`, `ALPACA_SECRET_
 pip install -r requirements.txt
 python orquestador.py ciclo                  # research, consejo y jefe; la decisión queda en bitacora/decisiones.jsonl
 python orquestador.py ciclo --sin-modelo     # el mismo ciclo con reglas fijas, sin llamar a Claude
+python orquestador.py ejecutar               # revisa la última decisión aprobada con el checklist y simula la orden (no envía)
+python orquestador.py ejecutar --enviar      # la envía a la cuenta paper (solo con el visto bueno del usuario)
+python orquestador.py gestionar              # revisa los trades abiertos: toma de ganancia, stop, vencimiento cercano (simula)
+python orquestador.py gestionar --enviar     # envía los cierres a la cuenta paper
 python orquestador.py repaso                 # repaso semanal: resultado, trades, errores, fichas y lecciones propuestas
 python orquestador.py research               # agentes de research sobre SPY: de 1 a 3 candidatos o "no hay trade hoy"
 python orquestador.py research --sin-modelo  # el mismo circuito sin llamar a Claude (solo los cálculos)
@@ -47,5 +51,5 @@ Alpaca no da IV histórica, así que se reconstruye: para cada día hábil del �
 
 - El adaptador apunta siempre a `paper-api.alpaca.markets`; la URL no se puede cambiar a la de cuentas reales.
 - Antes de pedir cualquier dato verifica que el número de cuenta sea de paper (empieza con `PA`). Si no lo es, se detiene con `ALTO` y no hace nada más.
-- Todavía no existe ningún método para enviar órdenes: el adaptador solo hace pedidos GET.
+- Las órdenes están bloqueadas por defecto: el adaptador solo escribe con `permitir_ordenes=True`, que el orquestador activa únicamente con `--enviar`. Solo puede escribir en `/v2/orders` y vuelve a verificar que la cuenta sea paper antes de cada envío.
 - Los agentes usan solo `ANTHROPIC_API_KEY`: el proceso del Claude Agent SDK corre con una configuración propia y sin heredar credenciales de otra sesión de Claude Code.

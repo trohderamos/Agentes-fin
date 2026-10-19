@@ -4,14 +4,16 @@ El resto del sistema (agentes, datos, orquestador) solo conoce esta interfaz.
 Para pasar de Alpaca a tastytrade se escribe otro adaptador que la cumpla y
 no se toca nada más.
 
-La interfaz es de solo lectura: no hay ningún método para enviar órdenes.
+Las lecturas son abstractas. Las órdenes (fase 5) son opcionales: un bróker
+que no las implementa lanza ErrorBroker. El adaptador de Alpaca las tiene
+bloqueadas salvo que se lo cree con permitir_ordenes=True.
 """
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from typing import Optional
 
 
@@ -21,6 +23,10 @@ class ErrorBroker(Exception):
 
 class FaltanClaves(ErrorBroker):
     """No están las variables de entorno con las claves."""
+
+
+class OrdenesBloqueadas(ErrorBroker):
+    """Se intentó enviar o cancelar una orden con el bróker en modo solo lectura."""
 
 
 class CuentaRealDetectada(ErrorBroker):
@@ -103,6 +109,38 @@ class Noticia:
     simbolos: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class PataOrden:
+    simbolo: str  # OCC
+    lado: str  # "venta" o "compra"
+    ratio: int = 1
+
+
+@dataclass(frozen=True)
+class EstadoOrden:
+    id: str
+    estado: str  # new, accepted, filled, partially_filled, canceled, expired, rejected...
+    contratos: int
+    contratos_llenados: int
+    precio_promedio: Optional[float]  # por acción, con el signo del bróker
+    limite: Optional[float]
+
+    @property
+    def llena(self) -> bool:
+        return self.estado == "filled"
+
+    @property
+    def terminada(self) -> bool:
+        return self.estado in ("filled", "canceled", "expired", "rejected", "done_for_day")
+
+
+@dataclass(frozen=True)
+class Reloj:
+    abierto: bool
+    ahora: datetime
+    proximo_cierre: datetime
+
+
 class Broker(ABC):
     """Lo que el sistema necesita de un bróker (solo lectura)."""
 
@@ -156,3 +194,29 @@ class Broker(ABC):
         News trabaja con la búsqueda web.
         """
         return []
+
+    # --- Órdenes (fase 5) ---------------------------------------------------
+
+    def reloj(self) -> Reloj:
+        """Si el mercado está abierto y cuándo cierra."""
+        raise ErrorBroker(f"{self.nombre} no informa el horario del mercado.")
+
+    def cotizaciones(self, simbolos: list[str]) -> dict[str, ContratoOpcion]:
+        """Cotización y griegas actuales de contratos puntuales, por símbolo OCC."""
+        raise ErrorBroker(f"{self.nombre} no da cotizaciones por símbolo.")
+
+    def enviar_orden_multipata(
+        self, patas: list[PataOrden], contratos: int, limite: float, abrir: bool, id_cliente: str
+    ) -> EstadoOrden:
+        """Una sola orden con todas las patas, límite y vigencia del día.
+
+        `limite` es positivo: al abrir (abrir=True) es el crédito mínimo a cobrar
+        por acción; al cerrar, el débito máximo a pagar.
+        """
+        raise ErrorBroker(f"{self.nombre} no envía órdenes.")
+
+    def estado_orden(self, id_orden: str) -> EstadoOrden:
+        raise ErrorBroker(f"{self.nombre} no envía órdenes.")
+
+    def cancelar_orden(self, id_orden: str) -> None:
+        raise ErrorBroker(f"{self.nombre} no envía órdenes.")
