@@ -5,6 +5,7 @@ Por ahora es de solo lectura: no envía órdenes.
 Uso:
     python orquestador.py ciclo                  # research, consejo y jefe; la decisión queda en la bitácora
     python orquestador.py ciclo --sin-modelo     # mismo ciclo sin llamar a Claude
+    python orquestador.py repaso                 # repaso semanal: resultado, trades, errores, fichas y lecciones
     python orquestador.py research               # agentes de research sobre SPY: 1 a 3 candidatos o "no hay trade"
     python orquestador.py research --sin-modelo  # mismo circuito sin llamar a Claude (solo cálculos)
     python orquestador.py informe                # informe de datos de SPY del día
@@ -20,7 +21,7 @@ import argparse
 import asyncio
 import json
 import sys
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Optional
 
@@ -166,6 +167,31 @@ def cmd_ciclo(broker: Broker, args: argparse.Namespace) -> None:
         print(f"\nGuardado en {ruta.relative_to(Path(__file__).parent)} y en bitacora/decisiones.jsonl")
 
 
+CARPETA_REPASOS = Path(__file__).parent / "datos" / "repasos"
+
+
+def cmd_repaso(broker: Broker, args: argparse.Namespace) -> None:
+    from agentes.modelo import ModeloClaude
+    from agentes.repaso import formatear_repaso, guardar_propuestas, repasar
+    from datos.cadena import hoy_nueva_york
+
+    broker.cuenta()  # verifica que sea paper antes de pedir nada más
+    modelo = None if args.sin_modelo else ModeloClaude(modelo=args.modelo)
+    hoy = date.fromisoformat(args.fecha) if args.fecha else hoy_nueva_york()
+    repaso = asyncio.run(repasar(broker, modelo, hoy, args.simbolo.upper()))
+    texto = formatear_repaso(repaso)
+    print(texto)
+    if not args.sin_guardar:
+        guardar_propuestas(repaso)
+        CARPETA_REPASOS.mkdir(parents=True, exist_ok=True)
+        base = CARPETA_REPASOS / f"repaso-{repaso.desde.isoformat()}"
+        base.with_suffix(".md").write_text(texto, encoding="utf-8")
+        base.with_suffix(".json").write_text(
+            json.dumps(repaso.a_dict(), ensure_ascii=False, indent=2, default=str), encoding="utf-8"
+        )
+        print(f"\nGuardado en {base.with_suffix('.md').relative_to(Path(__file__).parent)}")
+
+
 def armar_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Agentes de venta de primas (solo lectura: no envía órdenes).")
     p.add_argument(
@@ -205,6 +231,14 @@ def armar_parser() -> argparse.ArgumentParser:
     c.add_argument("--modelo", default=config.MODELO, help="Modelo de Claude para los agentes.")
     c.add_argument("--sin-guardar", action="store_true", help="No guarda el JSON ni escribe la bitácora.")
     c.set_defaults(func=cmd_ciclo)
+
+    rp = sub.add_parser("repaso", help="Repaso semanal: resultado, trades, errores, fichas y lecciones.")
+    rp.add_argument("--simbolo", default="SPY")
+    rp.add_argument("--fecha", help="Un día de la semana a repasar (AAAA-MM-DD). Por defecto, esta semana.")
+    rp.add_argument("--sin-modelo", action="store_true", help="No propone lecciones (no llama a Claude).")
+    rp.add_argument("--modelo", default=config.MODELO, help="Modelo de Claude para el repaso.")
+    rp.add_argument("--sin-guardar", action="store_true", help="No guarda el informe ni las propuestas.")
+    rp.set_defaults(func=cmd_repaso)
     return p
 
 

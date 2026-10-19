@@ -76,7 +76,11 @@ def registro_bitacora(ciclo: ResultadoCiclo) -> dict:
         "orden_enviada": False,  # en la fase 4 no se envían órdenes
         "freno": r.freno.estado,
         "eventos": [f"{e.get('fecha')} {e.get('evento')}" for e in (r.news or {}).get("eventos", [])],
+        "precio": r.precio,
         "tesis_chart": (r.chart or {}).get("tesis"),
+        "lado_chart": (r.chart or {}).get("lado_a_vender"),
+        "tesis_fundamentals": (r.fundamentals or {}).get("tesis"),
+        "lado_fundamentals": (r.fundamentals or {}).get("lado_a_vender"),
         "tesis_news": (r.news or {}).get("tesis"),
         "tesis_strategy": (r.strategy or {}).get("tesis"),
         "confianza_strategy": (r.strategy or {}).get("confianza"),
@@ -90,11 +94,13 @@ def registro_bitacora(ciclo: ResultadoCiclo) -> dict:
                 "estructura": c["estructura"],
                 "vencimiento": c["vencimiento"],
                 "strikes": [f"{p['lado']} {p['tipo']} {p['strike']:g}" for p in c["patas"]],
+                "patas": [{"tipo": p["tipo"], "lado": p["lado"], "strike": p["strike"]} for p in c["patas"]],
+                "peor_escenario_usd": min((e["resultado_por_contrato_usd"] for e in v.debate.escenarios), default=None),
                 "credito": c["credito"],
                 "perdida_maxima": c["perdida_maxima"],
                 "backtest": (v.debate.trade.get("backtest") or {}).get("veredicto"),
                 "votos": {
-                    m: {"voto": p.get("voto"), "argumento": p.get("postura")}
+                    m: {"voto": p.get("voto"), "confianza": p.get("confianza"), "argumento": p.get("postura")}
                     for m, p in v.debate.rondas[-1].items()
                 },
             }

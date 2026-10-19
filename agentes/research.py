@@ -27,7 +27,7 @@ from agentes.backtest import ResultadoBacktest, correr_backtest
 from agentes.bitacora import TradeRegistrado, leer_trades
 from agentes.estructuras import Candidato, ancho_objetivo, armar_candidatos
 from agentes.freno import ResultadoFreno, evaluar_freno
-from agentes.modelo import Modelo, Pedido, cargar_skill, esquema_informe
+from agentes.modelo import Modelo, Pedido, cargar_skill, esquema_informe, lecciones_aprobadas
 from agentes.riesgo import Revision, eventos_que_descartan, revisar
 from broker.base import Barra, Broker, Noticia
 from datos.cadena import cadena_en_ventana, hoy_nueva_york
@@ -145,6 +145,8 @@ def _sistema(agente: str, hoy: date, skills: list[str], tarea: str) -> str:
     ]
     for s in skills:
         partes.append(f"## Skill {s}\n{cargar_skill(s)}")
+    if lecciones_aprobadas():
+        partes.append(lecciones_aprobadas())
     return "\n\n".join(partes)
 
 

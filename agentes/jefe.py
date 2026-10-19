@@ -20,7 +20,7 @@ from datetime import date
 from typing import Optional
 
 from agentes.consejo import Debate
-from agentes.modelo import Modelo, Pedido, cargar_skill
+from agentes.modelo import Modelo, Pedido, cargar_skill, lecciones_aprobadas
 
 DECISIONES = ("APROBAR", "AJUSTAR", "RECHAZAR")
 MAX_VUELTAS = 2
@@ -80,8 +80,9 @@ def _sistema(hoy: date) -> str:
             "Usá solo los datos del mensaje. Nunca inventes precios ni strikes.",
             "## Tu tarea\n" + TAREA,
             "## Skill jefe-opciones-primas\n" + cargar_skill("jefe-opciones-primas"),
+            lecciones_aprobadas(),
         ]
-    )
+    ).strip()
 
 
 def _sin_modelo(debate: Debate) -> dict:

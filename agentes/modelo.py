@@ -25,6 +25,20 @@ class ErrorModelo(Exception):
     pass
 
 
+ARCHIVO_LECCIONES = Path(__file__).parent / "lecciones.md"
+
+
+def lecciones_aprobadas() -> str:
+    """Lecciones que el usuario aprobó en los repasos semanales. Todos los agentes las leen."""
+    if not ARCHIVO_LECCIONES.exists():
+        return ""
+    texto = ARCHIVO_LECCIONES.read_text(encoding="utf-8").strip()
+    lineas = [l for l in texto.splitlines() if l.strip().startswith("- ")]
+    if not lineas:
+        return ""
+    return "## Lecciones aprobadas por el usuario (respetalas)\n" + "\n".join(lineas)
+
+
 def cargar_skill(nombre: str) -> str:
     """Texto del skill, sin el encabezado YAML."""
     ruta = CARPETA_SKILLS / nombre / "SKILL.md"

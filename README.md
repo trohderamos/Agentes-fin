@@ -22,6 +22,7 @@ Las claves se leen de las variables de entorno `ALPACA_API_KEY`, `ALPACA_SECRET_
 pip install -r requirements.txt
 python orquestador.py ciclo                  # research, consejo y jefe; la decisión queda en bitacora/decisiones.jsonl
 python orquestador.py ciclo --sin-modelo     # el mismo ciclo con reglas fijas, sin llamar a Claude
+python orquestador.py repaso                 # repaso semanal: resultado, trades, errores, fichas y lecciones propuestas
 python orquestador.py research               # agentes de research sobre SPY: de 1 a 3 candidatos o "no hay trade hoy"
 python orquestador.py research --sin-modelo  # el mismo circuito sin llamar a Claude (solo los cálculos)
 python orquestador.py informe                # informe de datos de SPY del día (se guarda en datos/informes/)

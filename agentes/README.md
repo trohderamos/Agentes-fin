@@ -54,3 +54,14 @@ El ciclo corre research y, si hay candidatos, el consejo debate el preferido en 
 Reglas que se aseguran en código, decida lo que decida el jefe: la orden aprobada tiene que ser un candidato de research sin veto, con contratos dentro del 2% del capital y precio límite no mayor que el punto medio; sin plan de salida escrito no se aprueba; la cuenta tiene que ser paper. Si algo no cumple, la decisión pasa a AJUSTAR y, en la última vuelta, a RECHAZAR.
 
 Con `--sin-modelo` el consejo y el jefe siguen reglas fijas (sirve para probar el circuito, no para decidir).
+
+## Repaso semanal (`python orquestador.py repaso`)
+
+Corre los viernes después del cierre. Arma el informe de la semana para el usuario (resultado y peor caída, trades cerrados y abiertos con su tesis, posiciones abiertas con su resultado no realizado y plan de salida, y las decisiones de cada día) y hace los cuatro pasos de mejora:
+
+1. **Errores.** Cada trade cerrado con pérdida se clasifica: tesis de lado equivocada, evento grande que no estaba en la lista de News, o pérdida mayor que el peor escenario calculado por el consejo. Los trades no operados (rechazados o aprobados sin enviar) se valúan al vencimiento para ver qué habría pasado.
+2. **Fichas.** Aciertos de cada consejero y del jefe con todo el historial: un voto A FAVOR acierta si el trade ganó; EN CONTRA, si perdió.
+3. **Lecciones.** Un agente con el skill bitacora-trades propone de 0 a 3 cambios con su evidencia. Quedan en `bitacora/lecciones_propuestas.jsonl` y **no se aplican solos**: las que el usuario aprueba se escriben en `agentes/lecciones.md`, que todos los agentes leen en cada corrida.
+4. **Prueba.** Si un cambio toca el delta, el plazo o el ancho, se compara con el backtest el valor actual contra el propuesto.
+
+El informe se guarda en `datos/repasos/`. Con `--sin-modelo` hace todo menos el paso 3.

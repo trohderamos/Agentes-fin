@@ -18,7 +18,7 @@ from datetime import date, timedelta
 from typing import Any, Optional
 
 from agentes import config
-from agentes.modelo import Modelo, Pedido, cargar_skill
+from agentes.modelo import Modelo, Pedido, cargar_skill, lecciones_aprobadas
 from datos.calculos import precio_bs
 
 MIEMBROS = ("ejecutor", "esceptico", "gestor", "liquidez")
@@ -239,8 +239,9 @@ def _sistema(miembro: str, hoy: date) -> str:
             "Usá solo los datos del mensaje. Nunca inventes precios, strikes ni datos de mercado.",
             "## Tu tarea\n" + TAREAS[miembro],
             "## Skill consejo-opciones-primas\n" + cargar_skill("consejo-opciones-primas"),
+            lecciones_aprobadas(),
         ]
-    )
+    ).strip()
 
 
 def _sin_modelo(miembro: str, d: Debate, ronda: int) -> dict:

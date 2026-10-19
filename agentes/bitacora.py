@@ -8,7 +8,9 @@ se opere o no (fase 4).
 Campos de trades.jsonl que se usan acá:
     id, estado ("abierto" o "cerrado"), subyacente, simbolos (lista OCC),
     perdida_maxima (dólares, total del trade), delta, gamma, vega (de la
-    posición, total), resultado (dólares, al cerrar), cerrado_el (AAAA-MM-DD).
+    posición, total), resultado (dólares, al cerrar), cerrado_el y abierto_el
+    (AAAA-MM-DD), credito (por acción) y contratos. El id es el del candidato
+    de research, así el repaso lo cruza con su decisión.
 """
 
 from __future__ import annotations
@@ -38,6 +40,9 @@ class TradeRegistrado:
     vega: float = 0.0
     resultado: Optional[float] = None
     cerrado_el: Optional[date] = None
+    abierto_el: Optional[date] = None
+    credito: Optional[float] = None
+    contratos: int = 1
 
 
 def leer_trades(archivo: Path = ARCHIVO) -> list[TradeRegistrado]:
@@ -65,6 +70,9 @@ def leer_trades(archivo: Path = ARCHIVO) -> list[TradeRegistrado]:
                     vega=float(d.get("vega") or 0),
                     resultado=None if d.get("resultado") is None else float(d["resultado"]),
                     cerrado_el=None if not d.get("cerrado_el") else date.fromisoformat(d["cerrado_el"]),
+                    abierto_el=None if not d.get("abierto_el") else date.fromisoformat(d["abierto_el"]),
+                    credito=None if d.get("credito") is None else float(d["credito"]),
+                    contratos=int(d.get("contratos") or 1),
                 )
             )
         except (KeyError, TypeError, ValueError) as e:
