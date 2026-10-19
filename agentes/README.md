@@ -1,8 +1,8 @@
 # Agentes
 
-Nueve agentes en tres niveles:
+Diez agentes en tres niveles:
 
-1. **Research** (4): Chart, News, Strategy y Risk. Risk tiene veto antes del consejo. El backtest es una herramienta compartida, no un agente. **Fase 3: listos.**
+1. **Research** (5): Chart, News, Fundamentals, Strategy y Risk. Risk tiene veto antes del consejo. El backtest es una herramienta compartida, no un agente. **Fase 3: listos.**
 2. **Consejo** (4): ejecutor de primas, escéptico, gestor de posición, y liquidez y costos. Debaten dos rondas. **Fase 4: listos.**
 3. **Jefe** (1): escucha el debate y decide solo si aprueba, ajusta (vuelve a research) o rechaza. **Fase 4: listo.**
 
@@ -15,7 +15,7 @@ Cada agente es un llamado a Claude con el Claude Agent SDK, con su skill en las 
 | Paso | Quién | Skills | Qué hace |
 |---|---|---|---|
 | 1 | Freno por drawdown (código) | freno-drawdown-opciones | Si no está en PERMITIDO, no hay trade hoy y no se llama a ningún modelo. |
-| 2 | Chart y News, en paralelo | research-opciones-primas; News también calendario-catalizadores | Chart: tendencia, soportes y resistencias, IV vs realizada, de qué lado vender. News: catalizadores hasta el último vencimiento (con búsqueda web y las noticias de Benzinga de Alpaca), sentimiento, hechos y rumores. |
+| 2 | Chart, News y Fundamentals, en paralelo | research-opciones-primas; News también calendario-catalizadores; Fundamentals también fundamentals-opciones-primas | Chart: tendencia, soportes y resistencias, IV vs realizada, de qué lado vender. News: catalizadores hasta el último vencimiento (con búsqueda web y las noticias de Benzinga de Alpaca), sentimiento, hechos y rumores. Fundamentals: valuación, revisiones de estimaciones y riesgos fundamentales (con búsqueda web; para ETFs, el índice y sus mayores empresas), de qué lado vender y si se querría tener el activo. No veta: lo pesan Strategy, el consejo y el jefe. |
 | 3 | Candidatos (código) | | Spread de puts, de calls e iron condor por cada vencimiento de 7 a 21 días, con el strike vendido más cerca de delta 0.15 (entre 0.10 y 0.20) y los precios reales de la cadena. |
 | 4 | Límites (código) | | Descarta los que tienen un evento grande en el plazo (Fed, CPI, empleo de `datos/eventos.csv`, o cualquier evento que News marque de impacto alto) o que superan algún límite de Risk. |
 | 5 | Backtest aproximado (código) | backtest-opciones-primas | Una simulación por estructura desde 2018, con período de ajuste y de prueba, crisis y estrés. |
@@ -49,7 +49,7 @@ El ciclo corre research y, si hay candidatos, el consejo debate el preferido en 
 | 1 | Cálculos (código) | consejo-opciones-primas | Costos (comisiones y slippage, contra el 10% y 15% del crédito), escenarios de pérdida con un movimiento de 2 ATR y de 3% en 2 días, plan de salida por defecto (50% de ganancia, stop en 2 veces el crédito, cierre el día hábil anterior al vencimiento) y una orden por defecto. |
 | 2 | Ronda 1, los 4 en paralelo | consejo-opciones-primas | Cada uno da su postura y vota A FAVOR, AJUSTAR o EN CONTRA, con confianza. El ejecutor arma la orden; el gestor, el plan de salida. |
 | 3 | Ronda 2, los 4 en paralelo | consejo-opciones-primas | Cada uno lee las posturas de la ronda 1, responde y da su voto final. |
-| 4 | Jefe | jefe-opciones-primas | Decide solo: APROBAR (con orden y plan), AJUSTAR (vuelve a Strategy y Risk con los cambios; Chart y News se reusan) o RECHAZAR. Máximo dos vueltas. |
+| 4 | Jefe | jefe-opciones-primas | Decide solo: APROBAR (con orden y plan), AJUSTAR (vuelve a Strategy y Risk con los cambios; Chart, News y Fundamentals se reusan) o RECHAZAR. Máximo dos vueltas. |
 
 Reglas que se aseguran en código, decida lo que decida el jefe: la orden aprobada tiene que ser un candidato de research sin veto, con contratos dentro del 2% del capital y precio límite no mayor que el punto medio; sin plan de salida escrito no se aprueba; la cuenta tiene que ser paper. Si algo no cumple, la decisión pasa a AJUSTAR y, en la última vuelta, a RECHAZAR.
 

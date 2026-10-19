@@ -1,6 +1,6 @@
-"""Equipo de research: Chart, News, Strategy y Risk.
+"""Equipo de research: Chart, News, Fundamentals, Strategy y Risk.
 
-Orden: Chart y News en paralelo, después Strategy y por último Risk, que tiene
+Orden: Chart, News y Fundamentals en paralelo, después Strategy y por último Risk, que tiene
 veto. Antes de llamar a cualquier agente se evalúa el freno por drawdown: si no
 permite abrir riesgo, no se gasta en modelos y no hay trade hoy.
 
@@ -52,6 +52,7 @@ class ResultadoResearch:
     precio: Optional[float]
     chart: Optional[dict] = None
     news: Optional[dict] = None
+    fundamentals: Optional[dict] = None
     strategy: Optional[dict] = None
     risk: Optional[dict] = None
     descartados: dict[str, list[str]] = field(default_factory=dict)  # id -> motivos
@@ -72,6 +73,7 @@ class ResultadoResearch:
             "freno": self.freno.a_dict(),
             "chart": self.chart,
             "news": self.news,
+            "fundamentals": self.fundamentals,
             "strategy": self.strategy,
             "risk": self.risk,
             "candidatos": self.candidatos,
@@ -161,10 +163,17 @@ En 'eventos' poné impacto "alto" a: earnings del activo, decisión de la Fed, C
 los earnings de esas empresas de mayor peso. Todo evento de impacto alto descarta los vencimientos
 que lo incluyan. Marcá estimada la fecha que la empresa no confirmó. Separá hechos de rumores."""
 
+TAREA_FUNDAMENTALS = """Evaluá los fundamentals del activo (o del índice, si es un ETF) con búsqueda web:
+valuación contra su historia, crecimiento y revisiones de estimaciones, y riesgos que puedan provocar un
+gap antes del vencimiento. Para ETFs mirá el índice y las empresas de mayor peso que te paso. Decí de qué
+lado conviene vender prima según los fundamentals y si se querría tener el activo a estos precios (por si
+un put vendido termina en asignación). Cada cifra con su fecha y su fuente; lo que no encuentres, en
+'faltantes'. No predigas el precio de las próximas dos semanas con la valuación."""
+
 TAREA_STRATEGY = """Si viene 'ajustes_pedidos_por_el_jefe', es una nueva vuelta: elegí teniendo en cuenta esos cambios.
 Elegí de 0 a 3 candidatos de la lista 'candidatos', ordenados del mejor al peor, y decí
 cuál preferís y por qué. Solo podés elegir por 'id' de esa lista: los strikes, créditos y griegas ya están
-calculados con la cadena real y no se pueden cambiar. Tené en cuenta los informes de Chart y News, el
+calculados con la cadena real y no se pueden cambiar. Tené en cuenta los informes de Chart, News y Fundamentals, el
 backtest aproximado de cada estructura y el retorno sobre riesgo (menos de 20-25% rara vez compensa).
 Si ninguno conviene (por ejemplo IV baja, sesgo contrario de Chart o riesgo de evento), no elijas ninguno
 y explicá por qué en 'no_hay_trade_motivo'."""
@@ -214,6 +223,18 @@ ESQUEMA_NEWS = esquema_informe(
         "motivo_veredicto": {"type": "string"},
     },
     ["sentimiento", "por_que_se_mueve", "hechos", "rumores", "eventos", "veredicto", "motivo_veredicto"],
+)
+
+ESQUEMA_FUNDAMENTALS = esquema_informe(
+    {
+        "valuacion": {"type": "string", "enum": ["cara", "justa", "barata", "sin datos"]},
+        "estimaciones": {"type": "string", "enum": ["subiendo", "estables", "bajando", "sin datos"]},
+        "lado_a_vender": {"type": "string", "enum": ["puts", "calls", "ambos", "ninguno"]},
+        "se_querria_tener": {"type": "boolean"},
+        "motivo_tenencia": {"type": "string"},
+        "riesgos_fundamentales": {"type": "array", "items": {"type": "string"}},
+    },
+    ["valuacion", "estimaciones", "lado_a_vender", "se_querria_tener", "motivo_tenencia", "riesgos_fundamentales"],
 )
 
 ESQUEMA_STRATEGY = esquema_informe(
@@ -293,6 +314,24 @@ def _chart_sin_modelo(informe: Informe, soportes, resistencias) -> dict:
         "iv_favorable": favorable,
         "soportes": soportes,
         "resistencias": resistencias,
+        "sin_modelo": True,
+    }
+
+
+def _fundamentals_sin_modelo() -> dict:
+    return {
+        "tesis": "Sin análisis fundamental.",
+        "datos": [],
+        "confianza": "baja",
+        "motivo_confianza": "Los fundamentals se buscan en la web y la corrida es sin modelo.",
+        "invalidaria": [],
+        "faltantes": ["Análisis del agente Fundamentals (corrida sin modelo)."],
+        "valuacion": "sin datos",
+        "estimaciones": "sin datos",
+        "lado_a_vender": "ambos",
+        "se_querria_tener": False,
+        "motivo_tenencia": "",
+        "riesgos_fundamentales": [],
         "sin_modelo": True,
     }
 
@@ -378,7 +417,7 @@ class Research:
         """Corre el equipo de research.
 
         `ajustes` son los cambios que pidió el jefe al devolver un trade; con
-        `previo` se reusan los informes de Chart y News de la vuelta anterior.
+        `previo` se reusan los informes de Chart, News y Fundamentals de la vuelta anterior.
         """
         hoy = self.hoy
         cuenta = self.broker.cuenta()
@@ -422,12 +461,13 @@ class Research:
             r.avisos.append(f"No se pudieron leer las noticias: {e}")
         informe_dict = informe.a_dict()
 
-        # Chart y News en paralelo.
+        # Chart, News y Fundamentals en paralelo.
         if previo is not None and previo.chart is not None and previo.news is not None:
-            r.chart, r.news = previo.chart, previo.news
+            r.chart, r.news, r.fundamentals = previo.chart, previo.news, previo.fundamentals
         elif self.modelo is None:
             r.chart = _chart_sin_modelo(informe, soportes, resistencias)
             r.news = _news_sin_modelo(eventos)
+            r.fundamentals = _fundamentals_sin_modelo()
         else:
             pedido_chart = Pedido(
                 agente="Chart",
@@ -462,7 +502,27 @@ class Research:
                 busqueda_web=True,
                 max_turnos=20,
             )
-            r.chart, r.news = await asyncio.gather(self._pedir(pedido_chart), self._pedir(pedido_news))
+            pedido_fundamentals = Pedido(
+                agente="Fundamentals",
+                sistema=_sistema(
+                    "Fundamentals", hoy, ["research-opciones-primas", "fundamentals-opciones-primas"], TAREA_FUNDAMENTALS
+                ),
+                mensaje=_json(
+                    {
+                        "subyacente": self.subyacente,
+                        "precio": precio,
+                        "es_etf": self.subyacente in MAYORES_DEL_INDICE,
+                        "empresas_de_mayor_peso": MAYORES_DEL_INDICE.get(self.subyacente, []),
+                        "ultimo_vencimiento_de_la_ventana": ultimo_venc.isoformat(),
+                    }
+                ),
+                esquema=ESQUEMA_FUNDAMENTALS,
+                busqueda_web=True,
+                max_turnos=20,
+            )
+            r.chart, r.news, r.fundamentals = await asyncio.gather(
+                self._pedir(pedido_chart), self._pedir(pedido_news), self._pedir(pedido_fundamentals)
+            )
 
         # Candidatos con la cadena real, y filtro de límites duros.
         vencimientos = cadena_en_ventana(self.broker, self.subyacente, hoy=hoy)
@@ -515,6 +575,7 @@ class Research:
                             "iv": informe_dict["iv"],
                             "informe_chart": r.chart,
                             "informe_news": r.news,
+                            "informe_fundamentals": r.fundamentals,
                             "candidatos": [c.a_dict() for c in validos],
                             "descartados_por_limites": r.descartados,
                             "backtest_aproximado": r.backtests,

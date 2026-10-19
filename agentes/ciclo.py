@@ -1,6 +1,6 @@
 """Ciclo completo: research, consejo y jefe. No envía órdenes.
 
-Si el jefe pide ajustar, vuelve a research (se reusan Chart y News, Strategy y
+Si el jefe pide ajustar, vuelve a research (se reusan Chart, News y Fundamentals; Strategy y
 Risk vuelven a correr con los cambios pedidos), como máximo dos vueltas. Cada
 ciclo queda en bitacora/decisiones.jsonl, se opere o no.
 """

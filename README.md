@@ -8,7 +8,7 @@ Sistema de agentes que vende primas de opciones (plazo de 7 a 21 días, strike v
 |---|---|
 | `broker/` | La única pieza que habla con el bróker. `base.py` define la interfaz; `alpaca_paper.py` es el adaptador de Alpaca paper. Para migrar a tastytrade se agrega otro adaptador acá y no se toca nada más. |
 | `datos/` | Datos y cálculos para los agentes: cadena de opciones de 7 a 21 días, ATR, volatilidad realizada, IV e IV rank, movimiento esperado y el calendario de eventos (`eventos.csv`). |
-| `agentes/` | Los nueve agentes (research, consejo y jefe). Research (fase 3), consejo y jefe (fase 4). Ver `agentes/README.md`. |
+| `agentes/` | Los diez agentes (research, consejo y jefe). Research (fase 3), consejo y jefe (fase 4). Ver `agentes/README.md`. |
 | `.claude/skills/` | Copia de los skills del proyecto. Cada agente carga los suyos desde acá. |
 | `bitacora/` | Registro de trades. |
 | `orquestador.py` | Punto de entrada. |

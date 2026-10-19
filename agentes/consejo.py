@@ -312,6 +312,7 @@ async def debatir(
         "alternativas_de_research": d.alternativas,
         "informe_chart": research.get("chart"),
         "informe_news": research.get("news"),
+        "informe_fundamentals": research.get("fundamentals"),
         "informe_risk": research.get("risk"),
         "costos_calculados": d.costos,
         "escenarios_de_perdida": d.escenarios,

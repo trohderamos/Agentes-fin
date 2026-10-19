@@ -260,6 +260,9 @@ class ModeloFalso:
         base = {"tesis": "t", "datos": [], "confianza": "media", "motivo_confianza": "", "invalidaria": [], "faltantes": []}
         if pedido.agente == "Chart":
             base.update(tendencia="alcista", lado_a_vender="puts", iv_favorable=True, soportes=[], resistencias=[])
+        elif pedido.agente == "Fundamentals":
+            base.update(valuacion="justa", estimaciones="estables", lado_a_vender="puts", se_querria_tener=True,
+                        motivo_tenencia="", riesgos_fundamentales=[])
         elif pedido.agente == "News":
             base.update(sentimiento="mixto", por_que_se_mueve="", hechos=[], rumores=[], eventos=self.news_eventos,
                         veredicto="SIN EVENTOS", motivo_veredicto="")
@@ -326,14 +329,19 @@ class TestResearch(unittest.TestCase):
     def test_circuito_completo(self):
         modelo = ModeloFalso()
         r = correr(BrokerResearch(HOY), modelo)
-        self.assertEqual([p.agente for p in modelo.pedidos][:2], ["Chart", "News"])
-        self.assertEqual([p.agente for p in modelo.pedidos][2:], ["Strategy", "Risk"])
+        self.assertEqual([p.agente for p in modelo.pedidos][:3], ["Chart", "News", "Fundamentals"])
+        self.assertEqual([p.agente for p in modelo.pedidos][3:], ["Strategy", "Risk"])
+        fundamentals = modelo.pedidos[2]
+        self.assertTrue(fundamentals.busqueda_web)
+        self.assertIn("Skill fundamentals-opciones-primas", fundamentals.sistema)
+        self.assertIn("informe_fundamentals", json.loads(modelo.pedidos[3].mensaje))
+        self.assertEqual(r.fundamentals["valuacion"], "justa")
         self.assertTrue(modelo.pedidos[1].busqueda_web)
         self.assertIn("calendario-catalizadores", modelo.pedidos[1].sistema.lower().replace("skill ", ""))
         self.assertFalse(r.no_hay_trade, r.motivo_no_trade)
         self.assertEqual(len(r.candidatos), 1)
         self.assertTrue(r.candidatos[0]["preferido"])
-        self.assertAlmostEqual(r.costo_usd, 0.04)
+        self.assertAlmostEqual(r.costo_usd, 0.05)
         self.assertIn("CANDIDATOS PARA EL CONSEJO", formatear_research(r))
         json.dumps(r.a_dict(), default=str)
 
@@ -369,7 +377,7 @@ class TestResearch(unittest.TestCase):
         modelo = ModeloFalso()
         r = correr(BrokerResearch(HOY), modelo, [fed])
         self.assertTrue(r.no_hay_trade)
-        self.assertEqual([p.agente for p in modelo.pedidos], ["Chart", "News"])
+        self.assertEqual([p.agente for p in modelo.pedidos], ["Chart", "News", "Fundamentals"])
         # Un evento alto que encontró News descarta solo los vencimientos que lo incluyen.
         ev = [{"fecha": (HOY + timedelta(days=12)).isoformat(), "evento": "Earnings", "impacto": "alto"}]
         modelo = ModeloFalso(strategy=lambda cs: [c["id"] for c in cs][:3], news_eventos=ev)

@@ -158,7 +158,7 @@ class TestCiclo(unittest.TestCase):
         modelo = ModeloConsejo(jefe=jefe)
         c = ciclo(modelo, self.archivo)
         agentes = [p.agente for p in modelo.pedidos]
-        self.assertEqual(agentes[:4], ["Chart", "News", "Strategy", "Risk"])
+        self.assertEqual(agentes[:5], ["Chart", "News", "Fundamentals", "Strategy", "Risk"])
         self.assertEqual(len([a for a in agentes if "ronda 1" in a]), 4)
         self.assertEqual(len([a for a in agentes if "ronda 2" in a]), 4)
         self.assertEqual(agentes[-1], "Jefe")
@@ -182,7 +182,8 @@ class TestCiclo(unittest.TestCase):
         self.assertEqual(len(c.vueltas), 2)
         self.assertEqual(c.final.decision["decision"], "RECHAZAR")
         agentes = [p.agente for p in modelo.pedidos]
-        self.assertEqual(agentes.count("Chart"), 1)  # Chart y News se reusan
+        self.assertEqual(agentes.count("Chart"), 1)  # Chart, News y Fundamentals se reusan
+        self.assertEqual(agentes.count("Fundamentals"), 1)
         self.assertEqual(agentes.count("Strategy"), 2)
         strategy2 = [p for p in modelo.pedidos if p.agente == "Strategy"][1]
         self.assertEqual(json.loads(strategy2.mensaje)["ajustes_pedidos_por_el_jefe"], ["más lejos"])

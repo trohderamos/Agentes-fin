@@ -162,7 +162,7 @@ async def decidir(
             "max_vueltas": MAX_VUELTAS,
             "cuenta_paper": cuenta_paper,
             "informe_research": {
-                k: research.get(k) for k in ("chart", "news", "strategy", "risk", "candidatos", "freno", "capital", "precio")
+                k: research.get(k) for k in ("chart", "news", "fundamentals", "strategy", "risk", "candidatos", "freno", "capital", "precio")
             },
             "debate": debate.a_dict(),
             "contratos_max": debate.trade["revision"]["contratos_max"],

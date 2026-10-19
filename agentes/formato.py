@@ -49,6 +49,14 @@ def formatear_research(r: ResultadoResearch) -> str:
         for e in r.news.get("eventos", []):
             estado = "confirmado" if e.get("confirmado") else "estimado"
             lineas.insert(-1, f"    {e.get('fecha')} {e.get('hora', '')} {e.get('evento')} [{e.get('impacto')}, {estado}]")
+    lineas += _informe("FUNDAMENTALS", r.fundamentals)
+    if r.fundamentals and "valuacion" in r.fundamentals:
+        f = r.fundamentals
+        lineas.insert(
+            -1,
+            f"  Valuación {f['valuacion']} · estimaciones {f['estimaciones']} · vender {f['lado_a_vender']}"
+            f" · se querría tener: {'sí' if f['se_querria_tener'] else 'no'}",
+        )
     lineas += _informe("STRATEGY", r.strategy)
     lineas += _informe("RISK", r.risk)
 
