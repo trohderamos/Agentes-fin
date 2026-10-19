@@ -245,6 +245,15 @@ class TestModelo(unittest.TestCase):
         self.assertIn("CLAUDE_CONFIG_DIR", e)
         self.assertNotIn("PATH", e)
 
+    def test_entorno_con_oauth(self):
+        env = {"CLAUDE_CODE_OAUTH_TOKEN": "tok", "ANTHROPIC_BASE_URL": "http://otro", "CLAUDE_X": "y"}
+        with mock.patch.dict(os.environ, env, clear=True):
+            e = entorno_aislado()
+        self.assertEqual(e["CLAUDE_CODE_OAUTH_TOKEN"], "tok")
+        self.assertEqual(e["ANTHROPIC_BASE_URL"], "")
+        self.assertEqual(e["CLAUDE_X"], "")
+        self.assertIn("CLAUDE_CONFIG_DIR", e)
+
 
 class ModeloFalso:
     """Responde según el agente y guarda los pedidos."""

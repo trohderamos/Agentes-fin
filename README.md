@@ -17,7 +17,7 @@ Sistema de agentes que vende primas de opciones (plazo de 7 a 21 días, strike v
 
 ## Uso
 
-Las claves se leen de las variables de entorno `ALPACA_API_KEY`, `ALPACA_SECRET_KEY` y, para los agentes, `ANTHROPIC_API_KEY`. Nunca van en el código.
+Las claves se leen de las variables de entorno `ALPACA_API_KEY`, `ALPACA_SECRET_KEY` y, para los agentes, `ANTHROPIC_API_KEY` o, en su lugar, `CLAUDE_CODE_OAUTH_TOKEN` (sale de `claude setup-token` y usa el plan de Claude en vez de saldo de API). Nunca van en el código.
 
 ```bash
 pip install -r requirements.txt
@@ -52,7 +52,7 @@ python orquestador.py ejecutar --enviar      # manda a paper la orden si el jefe
 scripts/bitacora_git.sh subir                # guarda la bitácora en la rama
 ```
 
-Sin `ANTHROPIC_API_KEY` la rutina solo gestiona lo abierto: no abre trades con las reglas fijas.
+Sin `ANTHROPIC_API_KEY` ni `CLAUDE_CODE_OAUTH_TOKEN` la rutina solo gestiona lo abierto: no abre trades con las reglas fijas.
 
 ## Cómo se calcula el IV rank
 
@@ -67,4 +67,4 @@ Alpaca no da IV histórica, así que se reconstruye: para cada día hábil del �
 - El adaptador apunta siempre a `paper-api.alpaca.markets`; la URL no se puede cambiar a la de cuentas reales.
 - Antes de pedir cualquier dato verifica que el número de cuenta sea de paper (empieza con `PA`). Si no lo es, se detiene con `ALTO` y no hace nada más.
 - Las órdenes están bloqueadas por defecto: el adaptador solo escribe con `permitir_ordenes=True`, que el orquestador activa únicamente con `--enviar`. Solo puede escribir en `/v2/orders` y vuelve a verificar que la cuenta sea paper antes de cada envío.
-- Los agentes usan solo `ANTHROPIC_API_KEY`: el proceso del Claude Agent SDK corre con una configuración propia y sin heredar credenciales de otra sesión de Claude Code.
+- Los agentes usan solo `ANTHROPIC_API_KEY` o `CLAUDE_CODE_OAUTH_TOKEN`: el proceso del Claude Agent SDK corre con una configuración propia y sin heredar credenciales de otra sesión de Claude Code.
