@@ -12,13 +12,13 @@ plan de salida por defecto con las reglas del skill.
 from __future__ import annotations
 
 import asyncio
-import json
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Any, Optional
 
 from agentes import config
-from agentes.modelo import Modelo, Pedido, cargar_skill, lecciones_aprobadas
+from agentes.estructuras import resumen_candidato
+from agentes.modelo import Modelo, Pedido, a_json, cargar_skill, lecciones_aprobadas
 from datos.calculos import precio_bs
 
 MIEMBROS = ("ejecutor", "esceptico", "gestor", "liquidez")
@@ -197,6 +197,8 @@ class Debate:
     orden_por_defecto: dict
     rondas: list[dict[str, dict]] = field(default_factory=list)
     con_modelo: bool = True
+    # Instrucciones comunes del consejo y el jefe, con los datos del trade (ver sistema_comun).
+    sistema: str = ""
 
     def votos_finales(self) -> dict[str, str]:
         if not self.rondas:
@@ -231,18 +233,35 @@ class Debate:
         }
 
 
-def _sistema(miembro: str, hoy: date) -> str:
+def sistema_comun(hoy: date, contexto: dict) -> str:
+    """Instrucciones iguales para los cuatro miembros, las dos rondas y el jefe.
+
+    Los datos del trade van acá y no en el mensaje: así el texto largo es el
+    mismo en los nueve llamados, Claude Code lo guarda en caché en el primero
+    y los otros ocho lo leen a una fracción del costo. El rol y la tarea de
+    cada uno van en el mensaje.
+    """
     return "\n\n".join(
         [
-            f"Sos el {NOMBRES[miembro]} del consejo de un sistema que vende primas de opciones en una cuenta paper "
-            f"(dinero simulado). Hoy es {hoy.isoformat()}. Escribí en español rioplatense, corto y con cifras.",
-            "Usá solo los datos del mensaje. Nunca inventes precios, strikes ni datos de mercado.",
+            "Sos parte del consejo o el jefe de un sistema que vende primas de opciones en una cuenta paper "
+            f"(dinero simulado). Hoy es {hoy.isoformat()}. Tu rol y tu tarea vienen en el mensaje. Escribí en "
+            "español rioplatense, corto y con cifras.",
+            "Usá solo los datos de estas instrucciones y del mensaje. Nunca inventes precios, strikes ni datos de mercado.",
             config.regla_eventos(hoy),
-            "## Tu tarea\n" + TAREAS[miembro],
             "## Skill consejo-opciones-primas\n" + cargar_skill("consejo-opciones-primas"),
+            "## Skill jefe-opciones-primas (solo para el jefe)\n" + cargar_skill("jefe-opciones-primas"),
             lecciones_aprobadas(),
+            "## Datos del trade (research, Risk y cálculos en código)\n" + a_json(contexto),
         ]
     ).strip()
+
+
+def mensaje_miembro(miembro: str, ronda: int, posturas_ronda_1: Optional[dict] = None) -> str:
+    partes = [f"Sos el {NOMBRES[miembro]} del consejo. Ronda {ronda} de 2.", "## Tu tarea\n" + TAREAS[miembro]]
+    if ronda == 2:
+        partes.append("## Posturas de la ronda 1\n" + a_json(posturas_ronda_1))
+        partes.append("Respondé a los otros en 'respuesta_a_otros' y dá tu voto final.")
+    return "\n\n".join(partes)
 
 
 def _sin_modelo(miembro: str, d: Debate, ronda: int) -> dict:
@@ -310,12 +329,20 @@ async def debatir(
     )
     por_id = {x["candidato"]["id"]: x for x in candidatos}
     contexto = {
-        "trade": trade,
-        "alternativas_de_research": d.alternativas,
+        "subyacente": research.get("subyacente"),
+        "precio": research.get("precio"),
+        "trade": {**trade, "candidato": c},
+        # Sin el backtest, que es el mismo por estructura y ya viene en el trade.
+        "alternativas_de_research": [
+            {**{k: v for k, v in x.items() if k != "backtest"}, "candidato": resumen_candidato(x["candidato"])}
+            for x in d.alternativas
+        ],
         "informe_chart": research.get("chart"),
         "informe_news": research.get("news"),
         "informe_fundamentals": research.get("fundamentals"),
+        "informe_strategy": research.get("strategy"),
         "informe_risk": research.get("risk"),
+        "freno": research.get("freno"),
         "costos_calculados": d.costos,
         "escenarios_de_perdida": d.escenarios,
         "plan_de_salida_por_defecto": d.plan_por_defecto,
@@ -323,20 +350,17 @@ async def debatir(
         "contratos_max": trade["revision"]["contratos_max"],
         "capital": research.get("capital"),
     }
+    d.sistema = sistema_comun(hoy, contexto)
 
     async def postura(miembro: str, ronda: int) -> dict:
         if modelo is None:
             p = _sin_modelo(miembro, d, ronda)
         else:
-            mensaje: dict[str, Any] = {"ronda": ronda, **contexto}
-            if ronda == 2:
-                mensaje["posturas_ronda_1"] = d.rondas[0]
-                mensaje["instruccion"] = "Respondé a los otros en 'respuesta_a_otros' y dá tu voto final."
             respuesta = await modelo.pedir(
                 Pedido(
                     agente=f"{NOMBRES[miembro]} (ronda {ronda})",
-                    sistema=_sistema(miembro, hoy),
-                    mensaje=json.dumps(mensaje, ensure_ascii=False, indent=1, default=str),
+                    sistema=d.sistema,
+                    mensaje=mensaje_miembro(miembro, ronda, d.rondas[0] if ronda == 2 else None),
                     esquema=ESQUEMA_POSTURA,
                 )
             )
@@ -352,7 +376,12 @@ async def debatir(
         _validar_orden(p, d, por_id)
         return p
 
-    for ronda in (1, 2):
-        posturas = await asyncio.gather(*(postura(m, ronda) for m in MIEMBROS))
-        d.rondas.append(dict(zip(MIEMBROS, posturas)))
+    # El primero de la ronda 1 corre solo, para que su llamado deje las
+    # instrucciones comunes en caché antes de que arranquen los demás; si
+    # arrancan juntos, cada uno las vuelve a escribir y paga de nuevo.
+    primero = await postura(MIEMBROS[0], 1)
+    resto = await asyncio.gather(*(postura(m, 1) for m in MIEMBROS[1:]))
+    d.rondas.append(dict(zip(MIEMBROS, [primero, *resto])))
+    posturas = await asyncio.gather(*(postura(m, 2) for m in MIEMBROS))
+    d.rondas.append(dict(zip(MIEMBROS, posturas)))
     return d

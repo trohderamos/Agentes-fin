@@ -10,6 +10,7 @@ ninguna, se usa la sesión de Claude Code que corre el SDK. Nunca se imprime.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import tempfile
@@ -67,7 +68,20 @@ class Respuesta:
     avisos: list[str] = field(default_factory=list)
 
 
+def a_json(datos: Any) -> str:
+    """JSON compacto para los mensajes: sin sangría ni espacios, que también cuentan como tokens."""
+    return json.dumps(datos, ensure_ascii=False, separators=(",", ":"), default=str)
+
+
 _CONFIG_AISLADA = Path(tempfile.gettempdir()) / "agentes-fin-claude"
+
+
+# Claude Code guarda en caché cada mensaje por una hora, y escribir ese caché
+# cuesta el doble que leer el mensaje sin caché. Casi ningún mensaje de los
+# agentes se repite después de unos minutos (los que se reusan son los del
+# consejo y el jefe, que corren seguidos), así que el caché de 5 minutos, que
+# cuesta 1.25 veces, alcanza y baja cerca de un 25% cada llamado.
+ENTORNO_CACHE = {"FORCE_PROMPT_CACHING_5M": "1"}
 
 
 def entorno_aislado() -> dict[str, str]:
@@ -103,6 +117,8 @@ class ModeloClaude:
     def __init__(self, modelo: str = config.MODELO, presupuesto_usd: float = config.PRESUPUESTO_AGENTE_USD):
         self.modelo = modelo
         self.presupuesto_usd = presupuesto_usd
+        # Gasto de cada llamado (agente, costo y tokens), para ver qué agente gasta más.
+        self.gastos: list[dict] = []
 
     async def pedir(self, pedido: Pedido) -> Respuesta:
         from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
@@ -120,7 +136,7 @@ class ModeloClaude:
             max_budget_usd=self.presupuesto_usd,
             output_format={"type": "json_schema", "schema": pedido.esquema},
             # Con API key u OAuth token, aislado; sin ninguno, con la sesión que lo corre.
-            env=entorno_aislado(),
+            env={**entorno_aislado(), **ENTORNO_CACHE},
         )
         resultado: Optional[ResultMessage] = None
         try:
@@ -136,6 +152,18 @@ class ModeloClaude:
             if resultado.errors:
                 detalle += ": " + "; ".join(resultado.errors)[:300]
             raise ErrorModelo(f"{pedido.agente}: el modelo terminó con error ({detalle}).")
+        uso = resultado.usage or {}
+        self.gastos.append(
+            {
+                "agente": pedido.agente,
+                "costo_usd": round(resultado.total_cost_usd or 0.0, 4),
+                "entrada": uso.get("input_tokens", 0),
+                "cache_escrito": uso.get("cache_creation_input_tokens", 0),
+                "cache_leido": uso.get("cache_read_input_tokens", 0),
+                "salida": uso.get("output_tokens", 0),
+                "turnos": resultado.num_turns,
+            }
+        )
         return Respuesta(
             datos=resultado.structured_output,
             costo_usd=resultado.total_cost_usd,

@@ -78,6 +78,17 @@ class Candidato:
         return d
 
 
+# Lo que se manda de cada pata a los agentes que comparan candidatos. El símbolo
+# y las griegas de cada pata no se mandan: las griegas de la posición entera
+# vienen en el candidato.
+CAMPOS_PATA_RESUMEN = ("tipo", "lado", "strike", "bid", "ask", "delta", "iv")
+
+
+def resumen_candidato(d: dict) -> dict:
+    """El candidato (como dict) con las patas resumidas, para los mensajes a los agentes."""
+    return {**d, "patas": [{k: p.get(k) for k in CAMPOS_PATA_RESUMEN} for p in d.get("patas", [])]}
+
+
 def _pata(c: ContratoOpcion, lado: str) -> Optional[Pata]:
     if c.bid is None or c.ask is None or c.delta is None or c.ask <= 0 or c.bid < 0:
         return None

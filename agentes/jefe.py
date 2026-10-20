@@ -15,13 +15,11 @@ Si el jefe aprueba algo que no cumple, la decisión pasa a AJUSTAR con el motivo
 
 from __future__ import annotations
 
-import json
 from datetime import date
 from typing import Optional
 
-from agentes import config
 from agentes.consejo import Debate
-from agentes.modelo import Modelo, Pedido, cargar_skill, lecciones_aprobadas
+from agentes.modelo import Modelo, Pedido, a_json
 
 DECISIONES = ("APROBAR", "AJUSTAR", "RECHAZAR")
 MAX_VUELTAS = 2
@@ -65,26 +63,12 @@ ESQUEMA_DECISION = {
     "additionalProperties": False,
 }
 
-TAREA = """Leé el informe de research, la revisión de Risk y el debate completo del consejo (dos rondas).
+TAREA = """Leé los datos del trade (research y la revisión de Risk) y el debate completo del consejo (dos rondas).
 Decidí solo: APROBAR, AJUSTAR o RECHAZAR. Si aprobás, dejá la orden final (id de un candidato de research,
 contratos dentro de 'contratos_max' y precio límite como crédito por acción, no mayor que el punto medio) y
 el plan de salida. Si ajustás, poné en 'cambios_pedidos' los cambios exactos para research. Estás en la
 vuelta 'vuelta' de un máximo de 2: si en la última vuelta seguís sin poder aprobar, rechazá.
 En esta etapa la orden aprobada NO se envía: queda registrada en la bitácora."""
-
-
-def _sistema(hoy: date) -> str:
-    return "\n\n".join(
-        [
-            f"Sos el jefe de un sistema que vende primas de opciones en una cuenta paper (dinero simulado). Hoy es "
-            f"{hoy.isoformat()}. Escribí en español rioplatense, corto y concreto.",
-            "Usá solo los datos del mensaje. Nunca inventes precios ni strikes.",
-            config.regla_eventos(hoy),
-            "## Tu tarea\n" + TAREA,
-            "## Skill jefe-opciones-primas\n" + cargar_skill("jefe-opciones-primas"),
-            lecciones_aprobadas(),
-        ]
-    ).strip()
 
 
 def _sin_modelo(debate: Debate) -> dict:
@@ -160,21 +144,21 @@ async def decidir(
     if modelo is None:
         decision = _sin_modelo(debate)
     else:
-        mensaje = {
+        # Research, Risk y los cálculos del consejo ya vienen en las instrucciones
+        # comunes (debate.sistema), que el consejo dejó en caché; acá va solo el debate.
+        datos = {
             "vuelta": vuelta,
             "max_vueltas": MAX_VUELTAS,
             "cuenta_paper": cuenta_paper,
-            "informe_research": {
-                k: research.get(k) for k in ("chart", "news", "fundamentals", "strategy", "risk", "candidatos", "freno", "capital", "precio")
-            },
-            "debate": debate.a_dict(),
+            "rondas_del_consejo": debate.rondas,
+            "votos_finales": debate.votos_finales(),
             "contratos_max": debate.trade["revision"]["contratos_max"],
         }
         respuesta = await modelo.pedir(
             Pedido(
                 agente="Jefe",
-                sistema=_sistema(hoy),
-                mensaje=json.dumps(mensaje, ensure_ascii=False, indent=1, default=str),
+                sistema=debate.sistema,
+                mensaje="Sos el jefe.\n\n## Tu tarea\n" + TAREA + "\n\n## Debate\n" + a_json(datos),
                 esquema=ESQUEMA_DECISION,
             )
         )
