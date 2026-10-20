@@ -139,8 +139,7 @@ def _sistema(agente: str, hoy: date, skills: list[str], tarea: str, subyacente: 
         f"en una cuenta paper (dinero simulado). Hoy es {hoy.isoformat()}. Escribí en español rioplatense, "
         "claro y corto.",
         "Reglas del usuario: venta de primas, de 7 a 21 días al vencimiento, strike vendido con delta 0.10 "
-        "a 0.20, y cualquier evento macro grande (Fed, CPI, empleo) dentro del plazo descarta el trade. "
-        + config.regla_earnings(hoy),
+        "a 0.20. " + config.regla_eventos(hoy),
         "Usá solo los datos que te pasan en el mensaje (y lo que encuentres en la web con su fuente, si "
         "tenés búsqueda). Nunca inventes un dato: si falta, anotalo en 'faltantes'.",
         "## Tu tarea\n" + tarea,
@@ -172,7 +171,7 @@ feriados. Las fechas de Fed, CPI y empleo ya cargadas vienen en 'eventos_cargado
 En 'eventos' poné impacto "alto" a: earnings del activo, decisión de la Fed, CPI, empleo, y para ETFs
 los earnings de esas empresas de mayor peso. En 'tipo' poné "earnings" a los balances de empresas,
 "macro" a Fed, CPI, PCE y empleo, y "otro" al resto. Todo evento de impacto alto descarta los
-vencimientos que lo incluyan, salvo los earnings cuando la regla del usuario dice que no descartan.
+vencimientos que lo incluyan, salvo cuando la regla del usuario dice que los eventos no descartan.
 Marcá estimada la fecha que la empresa no confirmó. Separá hechos de rumores."""
 
 TAREA_FUNDAMENTALS = """Evaluá los fundamentals del activo (o del índice, si es un ETF) con búsqueda web:
@@ -374,7 +373,7 @@ def _news_sin_modelo(eventos: list[Evento]) -> dict:
             for e in eventos
         ],
         "veredicto": "ALERTA" if grandes else "SIN EVENTOS",
-        "motivo_veredicto": "Hay eventos grandes en la ventana; descartan los vencimientos que los incluyen."
+        "motivo_veredicto": "Hay eventos grandes en la ventana."
         if grandes
         else "",
         "sin_modelo": True,

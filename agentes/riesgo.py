@@ -79,17 +79,21 @@ def revisar(
         veto("Hay una pata vendida sin protección: riesgo ilimitado.")
 
     # Eventos dentro del plazo.
+    descartan = config.eventos_descartan(hoy)
     for e in eventos_que_descartan(eventos, hoy, c.vencimiento):
-        veto(f"Evento grande dentro del plazo: {e.fecha.isoformat()} {e.evento}.")
+        if descartan:
+            veto(f"Evento grande dentro del plazo: {e.fecha.isoformat()} {e.evento}.")
+        else:
+            r.alertas.append(f"Evento grande dentro del plazo (no descarta en la semana de prueba): {e.fecha.isoformat()} {e.evento}.")
     for e in eventos_news or []:
         try:
             fecha = date.fromisoformat(str(e.get("fecha", ""))[:10])
         except ValueError:
             continue
         if hoy <= fecha <= c.vencimiento and e.get("impacto") == "alto":
-            if e.get("tipo") == "earnings" and not config.earnings_descartan(hoy):
+            if not descartan:
                 r.alertas.append(
-                    f"Earnings dentro del plazo (no descartan en la semana de prueba): {fecha.isoformat()} {e.get('evento')}."
+                    f"News marcó un evento de impacto alto (no descarta en la semana de prueba): {fecha.isoformat()} {e.get('evento')}."
                 )
             else:
                 veto(f"News marcó un evento de impacto alto dentro del plazo: {fecha.isoformat()} {e.get('evento')}.")

@@ -1,6 +1,6 @@
 # Agentes-fin
 
-Sistema de agentes que vende primas de opciones (plazo de 7 a 21 días, strike vendido con delta 0.10 a 0.20). Opera SPY, GLD (oro), USO (petróleo), SMH (semiconductores) e IBIT (bitcoin), definidos en `agentes/config.py` (`UNIVERSO`). Primero se prueba en la cuenta **paper** de Alpaca y después se migra a tastytrade.
+Sistema de agentes que vende primas de opciones (plazo de 7 a 21 días, strike vendido con delta 0.10 a 0.20). Opera SPY, QQQ (Nasdaq 100), GLD (oro), USO (petróleo), SMH (semiconductores) e IBIT (bitcoin), definidos en `agentes/config.py` (`UNIVERSO`). Primero se prueba en la cuenta **paper** de Alpaca y después se migra a tastytrade.
 
 ## Estructura
 

@@ -19,26 +19,28 @@ DELTA_OBJETIVO = 0.15
 TIPOS_EVENTO_GRANDE = ("fed", "inflacion", "empleo")
 ESTRUCTURAS_PERMITIDAS = ("spread_put", "spread_call", "iron_condor")
 
-# Semana de prueba en paper: el usuario pidió (20 oct 2026) que los earnings
-# dentro del plazo no descarten el trade, para ver a los agentes operar. Hasta
-# esta fecha inclusive los earnings son una alerta que pesan el consejo y el
-# jefe; después vuelven a descartar. Fed, CPI y empleo descartan siempre.
-IGNORAR_EARNINGS_HASTA = date(2026, 10, 23)
+# Semana de prueba en paper: el usuario pidió (20 oct 2026) que ningún evento
+# dentro del plazo descarte el trade, ni earnings ni Fed, CPI o empleo, para
+# ver a los agentes operar. Hasta esta fecha inclusive los eventos son una
+# alerta que pesan el consejo y el jefe; después vuelven a descartar.
+IGNORAR_EVENTOS_HASTA = date(2026, 10, 23)
 
 
-def earnings_descartan(hoy: date) -> bool:
-    return hoy > IGNORAR_EARNINGS_HASTA
+def eventos_descartan(hoy: date) -> bool:
+    return hoy > IGNORAR_EVENTOS_HASTA
 
 
-def regla_earnings(hoy: date) -> str:
-    """La regla de earnings vigente, para las instrucciones de los agentes."""
-    if earnings_descartan(hoy):
-        return "Cualquier earnings dentro del plazo descarta el trade."
+def regla_eventos(hoy: date) -> str:
+    """La regla de eventos vigente, para las instrucciones de los agentes."""
+    if eventos_descartan(hoy):
+        return (
+            "Cualquier earnings (del activo o de las empresas de mayor peso de un ETF) o evento macro grande "
+            "(Fed, CPI, empleo) dentro del plazo descarta el trade."
+        )
     return (
-        f"Semana de prueba hasta el {IGNORAR_EARNINGS_HASTA.isoformat()}: por decisión del usuario, los "
-        "earnings dentro del plazo (del activo o de las empresas de mayor peso de un ETF) NO descartan el "
-        "trade. Pesalos como riesgo (tamaño, distancia del strike, estructura), no como veto. "
-        "Fed, CPI y empleo siguen descartando."
+        f"Semana de prueba hasta el {IGNORAR_EVENTOS_HASTA.isoformat()}: por decisión del usuario, ningún "
+        "evento dentro del plazo descarta el trade, ni earnings ni Fed, CPI o empleo. Pesalos como riesgo "
+        "(tamaño, distancia del strike, estructura, vencimiento antes o después del evento), no como veto."
     )
 
 # Subyacentes que recorre `orquestador.py ronda`. GLD (oro) y USO (petróleo)
@@ -50,7 +52,7 @@ def regla_earnings(hoy: date) -> str:
 # IBIT (bitcoin) no tiene balances pero su subyacente opera también el fin
 # de semana: puede abrir el lunes con un salto. ETHA (ethereum) quedó afuera
 # por ahora: solo tiene dos vencimientos por semana y se mueve con IBIT.
-UNIVERSO = ("SPY", "GLD", "USO", "SMH", "IBIT")
+UNIVERSO = ("SPY", "QQQ", "GLD", "USO", "SMH", "IBIT")
 # Activos cuyo subyacente cotiza 24/7: los agentes tienen en cuenta el salto
 # del fin de semana.
 ACTIVOS_24_7 = ("IBIT", "ETHA")

@@ -131,6 +131,7 @@ class TestRiesgo(unittest.TestCase):
         self.assertFalse(r.vetado, r.vetos)
         self.assertEqual(r.contratos_max, int(2000 // self.put.perdida_maxima))
 
+    @mock.patch.object(config, "IGNORAR_EVENTOS_HASTA", date(2000, 1, 1))
     def test_evento_grande_veta(self):
         fed = Evento(HOY + timedelta(days=5), "14:00", "fed", "FOMC", "Fed")
         r = revisar(self.put, HOY, 100_000, 600, self.freno, [], [fed])
@@ -138,24 +139,24 @@ class TestRiesgo(unittest.TestCase):
         despues = Evento(HOY + timedelta(days=20), "14:00", "fed", "FOMC", "Fed")
         self.assertFalse(revisar(self.put, HOY, 100_000, 600, self.freno, [], [despues]).vetado)
 
+    @mock.patch.object(config, "IGNORAR_EVENTOS_HASTA", date(2000, 1, 1))
     def test_evento_de_news_veta(self):
         ev = [{"fecha": (HOY + timedelta(days=3)).isoformat(), "evento": "Earnings NVDA", "impacto": "alto"}]
         self.assertTrue(revisar(self.put, HOY, 100_000, 600, self.freno, [], [], ev).vetado)
         ev[0]["impacto"] = "medio"
         self.assertFalse(revisar(self.put, HOY, 100_000, 600, self.freno, [], [], ev).vetado)
 
-    def test_earnings_no_vetan_en_la_semana_de_prueba(self):
+    def test_eventos_no_vetan_en_la_semana_de_prueba(self):
         ev = [{"fecha": (HOY + timedelta(days=3)).isoformat(), "evento": "Earnings NVDA", "tipo": "earnings", "impacto": "alto"}]
-        with mock.patch.object(config, "IGNORAR_EARNINGS_HASTA", HOY):
-            r = revisar(self.put, HOY, 100_000, 600, self.freno, [], [], ev)
+        fed = Evento(HOY + timedelta(days=5), "14:00", "fed", "FOMC", "Fed")
+        with mock.patch.object(config, "IGNORAR_EVENTOS_HASTA", HOY):
+            r = revisar(self.put, HOY, 100_000, 600, self.freno, [], [fed], ev)
             self.assertFalse(r.vetado)
-            self.assertTrue(any("Earnings" in a for a in r.alertas))
-            self.assertIn("NO descartan", config.regla_earnings(HOY))
-            ev[0]["tipo"] = "macro"
+            self.assertEqual(len(r.alertas), 2)
+            self.assertIn("ningún evento", config.regla_eventos(HOY))
+        with mock.patch.object(config, "IGNORAR_EVENTOS_HASTA", HOY - timedelta(days=1)):
             self.assertTrue(revisar(self.put, HOY, 100_000, 600, self.freno, [], [], ev).vetado)
-        ev[0]["tipo"] = "earnings"
-        with mock.patch.object(config, "IGNORAR_EARNINGS_HASTA", HOY - timedelta(days=1)):
-            self.assertTrue(revisar(self.put, HOY, 100_000, 600, self.freno, [], [], ev).vetado)
+            self.assertTrue(revisar(self.put, HOY, 100_000, 600, self.freno, [], [fed]).vetado)
 
     def test_capital_chico_veta(self):
         r = revisar(self.put, HOY, 10_000, 600, self.freno, [], [])
@@ -393,6 +394,7 @@ class TestResearch(unittest.TestCase):
         self.assertTrue(r.no_hay_trade)
         self.assertIn("Risk: gap", r.descartados[primero])
 
+    @mock.patch.object(config, "IGNORAR_EVENTOS_HASTA", date(2000, 1, 1))
     def test_eventos_descartan_vencimientos(self):
         # Fed dentro de todos los vencimientos: no llega nada a Strategy.
         fed = Evento(HOY + timedelta(days=2), "14:00", "fed", "FOMC", "Fed")
