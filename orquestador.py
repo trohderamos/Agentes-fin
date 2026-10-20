@@ -295,14 +295,14 @@ def armar_parser() -> argparse.ArgumentParser:
     r = sub.add_parser("research", help="Agentes de research: 1 a 3 candidatos o 'no hay trade hoy'.")
     r.add_argument("--simbolo", default="SPY")
     r.add_argument("--sin-modelo", action="store_true", help="No llama a Claude: solo los cálculos en código.")
-    r.add_argument("--modelo", default=config.MODELO, help="Modelo de Claude para los agentes.")
+    r.add_argument("--modelo", default=None, help="Un solo modelo de Claude para todos los agentes (por defecto, Sonnet en research y Opus en el consejo y el jefe).")
     r.add_argument("--sin-guardar", action="store_true", help="No guarda el JSON del resultado.")
     r.set_defaults(func=cmd_research)
 
     c = sub.add_parser("ciclo", help="Research, consejo y jefe. No envía órdenes.")
     c.add_argument("--simbolo", default="SPY")
     c.add_argument("--sin-modelo", action="store_true", help="No llama a Claude: reglas fijas.")
-    c.add_argument("--modelo", default=config.MODELO, help="Modelo de Claude para los agentes.")
+    c.add_argument("--modelo", default=None, help="Un solo modelo de Claude para todos los agentes (por defecto, Sonnet en research y Opus en el consejo y el jefe).")
     c.add_argument("--sin-guardar", action="store_true", help="No guarda el JSON ni escribe la bitácora.")
     c.set_defaults(func=cmd_ciclo)
 
@@ -321,14 +321,14 @@ def armar_parser() -> argparse.ArgumentParser:
     ro = sub.add_parser("ronda", help="Ciclo y ejecución para cada subyacente del universo (simula sin --enviar).")
     ro.add_argument("--simbolos", nargs="+", type=str.upper, default=list(config.UNIVERSO))
     ro.add_argument("--sin-modelo", action="store_true", help="No llama a Claude: reglas fijas.")
-    ro.add_argument("--modelo", default=config.MODELO, help="Modelo de Claude para los agentes.")
+    ro.add_argument("--modelo", default=None, help="Un solo modelo de Claude para todos los agentes (por defecto, Sonnet en research y Opus en el consejo y el jefe).")
     ro.add_argument("--sin-guardar", action="store_true", help="No guarda el JSON ni escribe la bitácora.")
     ro.add_argument("--enviar", action="store_true", help="Envía las órdenes aprobadas a la cuenta paper.")
     ro.set_defaults(func=cmd_ronda)
 
     no = sub.add_parser("noticias", help="El agente News revisa el universo y los trades abiertos (no envía órdenes).")
     no.add_argument("--simbolos", nargs="+", type=str.upper, default=list(config.UNIVERSO))
-    no.add_argument("--modelo", default=config.MODELO, help="Modelo de Claude para el agente News.")
+    no.add_argument("--modelo", default=None, help="Modelo de Claude para el agente News (por defecto Sonnet).")
     no.add_argument("--sin-guardar", action="store_true", help="No escribe bitacora/noticias.jsonl.")
     no.set_defaults(func=cmd_noticias)
 

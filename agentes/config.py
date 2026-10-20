@@ -91,6 +91,16 @@ SLIPPAGE_PATA = 0.02
 FACTOR_IV_REALIZADA = 1.15
 
 # --- Modelo ---------------------------------------------------------------
+# El usuario eligió (20 oct 2026) Sonnet para los cinco agentes de research y
+# Opus para el consejo y el jefe, que son los que deciden. Research junta datos
+# y los resume con esquema fijo; el juicio fino queda en el consejo y el jefe.
 MODELO = os.environ.get("AGENTES_MODELO", "claude-opus-5-5")
+MODELO_RESEARCH = os.environ.get("AGENTES_MODELO_RESEARCH", "claude-sonnet-5-5")
+# Agentes que usan MODELO_RESEARCH; el resto (consejo, jefe, repaso) usa MODELO.
+AGENTES_RESEARCH = ("Chart", "News", "Fundamentals", "Strategy", "Risk")
+
+
+def modelo_de_agente(agente: str) -> str:
+    return MODELO_RESEARCH if agente in AGENTES_RESEARCH else MODELO
 # Tope de gasto por agente y por corrida, en dólares.
 PRESUPUESTO_AGENTE_USD = float(os.environ.get("AGENTES_PRESUPUESTO_USD", "1.0"))

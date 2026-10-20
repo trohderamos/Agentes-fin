@@ -114,7 +114,9 @@ class Modelo(Protocol):
 class ModeloClaude:
     """Modelo real con el Claude Agent SDK."""
 
-    def __init__(self, modelo: str = config.MODELO, presupuesto_usd: float = config.PRESUPUESTO_AGENTE_USD):
+    def __init__(self, modelo: Optional[str] = None, presupuesto_usd: float = config.PRESUPUESTO_AGENTE_USD):
+        # Sin modelo, cada agente usa el que le toca (config.modelo_de_agente):
+        # Sonnet en research, Opus en el consejo y el jefe. Con modelo, ese para todos.
         self.modelo = modelo
         self.presupuesto_usd = presupuesto_usd
         # Gasto de cada llamado (agente, costo y tokens), para ver qué agente gasta más.
@@ -124,9 +126,10 @@ class ModeloClaude:
         from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
 
         herramientas = ["WebSearch"] if pedido.busqueda_web else []
+        modelo = self.modelo or config.modelo_de_agente(pedido.agente.split(" (")[0])
         opciones = ClaudeAgentOptions(
             system_prompt=pedido.sistema,
-            model=self.modelo,
+            model=modelo,
             tools=herramientas,
             allowed_tools=herramientas,
             permission_mode="dontAsk",
@@ -156,6 +159,7 @@ class ModeloClaude:
         self.gastos.append(
             {
                 "agente": pedido.agente,
+                "modelo": modelo,
                 "costo_usd": round(resultado.total_cost_usd or 0.0, 4),
                 "entrada": uso.get("input_tokens", 0),
                 "cache_escrito": uso.get("cache_creation_input_tokens", 0),
