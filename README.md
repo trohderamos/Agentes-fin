@@ -1,6 +1,6 @@
 # Agentes-fin
 
-Sistema de agentes que vende primas de opciones (plazo de 7 a 21 días, strike vendido con delta 0.10 a 0.20). Opera SPY, GLD (oro), USO (petróleo) y SMH (semiconductores), definidos en `agentes/config.py` (`UNIVERSO`). Primero se prueba en la cuenta **paper** de Alpaca y después se migra a tastytrade.
+Sistema de agentes que vende primas de opciones (plazo de 7 a 21 días, strike vendido con delta 0.10 a 0.20). Opera SPY, GLD (oro), USO (petróleo), SMH (semiconductores) e IBIT (bitcoin), definidos en `agentes/config.py` (`UNIVERSO`). Primero se prueba en la cuenta **paper** de Alpaca y después se migra a tastytrade.
 
 ## Estructura
 
@@ -21,7 +21,7 @@ Las claves se leen de las variables de entorno `ALPACA_API_KEY`, `ALPACA_SECRET_
 
 ```bash
 pip install -r requirements.txt
-python orquestador.py ronda                  # ciclo y ejecución (simulada) para SPY, GLD (oro), USO (petróleo) y SMH (semiconductores)
+python orquestador.py ronda                  # ciclo y ejecución (simulada) para cada activo del universo
 python orquestador.py ronda --enviar         # lo mismo, mandando a paper lo que apruebe el jefe
 python orquestador.py ciclo                  # research, consejo y jefe; la decisión queda en bitacora/decisiones.jsonl
 python orquestador.py ciclo --sin-modelo     # el mismo ciclo con reglas fijas, sin llamar a Claude
@@ -50,7 +50,7 @@ La rutina corre cada día hábil en una máquina nueva, así que la bitácora (q
 ```bash
 scripts/bitacora.sh bajar                    # trae la bitácora guardada
 python orquestador.py gestionar --enviar     # cierra lo que pida el plan de salida
-python orquestador.py ronda --enviar         # ciclo con el modelo en SPY, GLD, USO y SMH; manda a paper lo que apruebe el jefe
+python orquestador.py ronda --enviar         # ciclo con el modelo en cada activo del universo; manda a paper lo que apruebe el jefe
 scripts/bitacora.sh subir                    # guarda la bitácora
 ```
 

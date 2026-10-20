@@ -268,6 +268,11 @@ class AlpacaPaper(Broker):
         while True:
             datos = self._get(URL_DATOS, f"/v1beta1/options/snapshots/{subyacente}", params)
             for simbolo, snap in (datos.get("snapshots") or {}).items():
+                # Los contratos ajustados (por ejemplo ETHA1...) entregan otra cosa
+                # que 100 acciones: se dejan afuera.
+                m = _OCC.match(simbolo)
+                if not m or m["raiz"] != subyacente.upper():
+                    continue
                 contratos.append(self._contrato(simbolo, snap or {}))
             token = datos.get("next_page_token")
             if not token:

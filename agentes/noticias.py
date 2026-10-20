@@ -76,7 +76,7 @@ async def revisar_noticias(
         noticias = []
     pedido = Pedido(
         agente="News",
-        sistema=_sistema("News", hoy, ["research-opciones-primas", "calendario-catalizadores"], TAREA_GUARDIA),
+        sistema=_sistema("News", hoy, ["research-opciones-primas", "calendario-catalizadores"], TAREA_GUARDIA, subyacente),
         mensaje=_json(
             {
                 "subyacente": subyacente,

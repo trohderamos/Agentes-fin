@@ -133,7 +133,7 @@ def _resumen_backtest(b: ResultadoBacktest) -> dict:
 # --- Instrucciones de cada agente ----------------------------------------
 
 
-def _sistema(agente: str, hoy: date, skills: list[str], tarea: str) -> str:
+def _sistema(agente: str, hoy: date, skills: list[str], tarea: str, subyacente: str = "") -> str:
     partes = [
         f"Sos el agente {agente} del equipo de research de un sistema que vende primas de opciones "
         f"en una cuenta paper (dinero simulado). Hoy es {hoy.isoformat()}. Escribí en español rioplatense, "
@@ -145,6 +145,12 @@ def _sistema(agente: str, hoy: date, skills: list[str], tarea: str) -> str:
         "tenés búsqueda). Nunca inventes un dato: si falta, anotalo en 'faltantes'.",
         "## Tu tarea\n" + tarea,
     ]
+    if subyacente in config.ACTIVOS_24_7:
+        partes.append(
+            f"## Ojo: {subyacente} sigue a una cripto que cotiza 24/7\nEl ETF no opera el fin de semana pero la cripto sí: "
+            "una posición abierta el viernes puede amanecer el lunes con un salto de precio, sin poder cerrarla "
+            "antes. Tenelo en cuenta en la distancia del strike, el ancho y el tamaño, sobre todo de jueves a viernes."
+        )
     for s in skills:
         partes.append(f"## Skill {s}\n{cargar_skill(s)}")
     if lecciones_aprobadas():
@@ -480,7 +486,7 @@ class Research:
 
             pedido_chart = Pedido(
                 agente="Chart",
-                sistema=_sistema("Chart", hoy, ["research-opciones-primas"], TAREA_CHART),
+                sistema=_sistema("Chart", hoy, ["research-opciones-primas"], TAREA_CHART, self.subyacente),
                 mensaje=_json(
                     {
                         "informe_de_datos": {k: informe_dict[k] for k in ("subyacente", "fecha", "precio", "iv", "vencimientos", "avisos")},
@@ -496,7 +502,7 @@ class Research:
             )
             pedido_news = Pedido(
                 agente="News",
-                sistema=_sistema("News", hoy, ["research-opciones-primas", "calendario-catalizadores"], TAREA_NEWS),
+                sistema=_sistema("News", hoy, ["research-opciones-primas", "calendario-catalizadores"], TAREA_NEWS, self.subyacente),
                 mensaje=_json(
                     {
                         "subyacente": self.subyacente,
@@ -575,7 +581,7 @@ class Research:
                 Pedido(
                     agente="Strategy",
                     sistema=_sistema(
-                        "Strategy", hoy, ["research-opciones-primas", "analisis-opciones-primas"], TAREA_STRATEGY
+                        "Strategy", hoy, ["research-opciones-primas", "analisis-opciones-primas"], TAREA_STRATEGY, self.subyacente
                     ),
                     mensaje=_json(
                         {
@@ -623,7 +629,7 @@ class Research:
             r.risk = await self._pedir(
                 Pedido(
                     agente="Risk",
-                    sistema=_sistema("Risk", hoy, ["research-opciones-primas", "freno-drawdown-opciones"], TAREA_RISK),
+                    sistema=_sistema("Risk", hoy, ["research-opciones-primas", "freno-drawdown-opciones"], TAREA_RISK, self.subyacente),
                     mensaje=_json(
                         {
                             "capital": cuenta.patrimonio,

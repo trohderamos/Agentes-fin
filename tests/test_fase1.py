@@ -128,6 +128,7 @@ class TestCadena(unittest.TestCase):
                 "snapshots": {
                     "SPY261106P00540000": snapshot(-0.08),
                     "SPY261106P00560000": snapshot(-0.18),
+                    "SPY1261106P00560000": snapshot(-0.18),  # contrato ajustado: se ignora
                 },
                 "next_page_token": None,
             },

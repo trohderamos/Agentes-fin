@@ -16,6 +16,14 @@ class TestRonda(unittest.TestCase):
         self.assertFalse(args.enviar)
         self.assertIn("GLD", config.UNIVERSO)
         self.assertIn("USO", config.UNIVERSO)
+        self.assertIn("IBIT", config.UNIVERSO)
+
+    def test_aviso_de_fin_de_semana_para_cripto(self):
+        from datetime import date
+        from agentes.research import _sistema
+
+        self.assertIn("24/7", _sistema("Risk", date(2026, 10, 20), [], "t", "IBIT"))
+        self.assertNotIn("24/7", _sistema("Risk", date(2026, 10, 20), [], "t", "SPY"))
 
     def test_ejecuta_despues_de_cada_ciclo_y_sigue_si_uno_falla(self):
         llamadas = []

@@ -47,7 +47,13 @@ def regla_earnings(hoy: date) -> str:
 # empresas. Se eligió sobre SOXX porque tiene más vencimientos semanales.
 # SLV quedó afuera: la prima a delta 0.15 es tan chica que los costos se
 # comen más de la mitad del crédito.
-UNIVERSO = ("SPY", "GLD", "USO", "SMH")
+# IBIT (bitcoin) no tiene balances pero su subyacente opera también el fin
+# de semana: puede abrir el lunes con un salto. ETHA (ethereum) quedó afuera
+# por ahora: solo tiene dos vencimientos por semana y se mueve con IBIT.
+UNIVERSO = ("SPY", "GLD", "USO", "SMH", "IBIT")
+# Activos cuyo subyacente cotiza 24/7: los agentes tienen en cuenta el salto
+# del fin de semana.
+ACTIVOS_24_7 = ("IBIT", "ETHA")
 
 # Ancho de las alas de los spreads, en dólares por cada 100 de precio del
 # subyacente (con SPY a 770, 0.75 da alas de 6 dólares).
