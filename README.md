@@ -27,6 +27,7 @@ python orquestador.py ciclo                  # research, consejo y jefe; la deci
 python orquestador.py ciclo --sin-modelo     # el mismo ciclo con reglas fijas, sin llamar a Claude
 python orquestador.py ejecutar               # revisa la última decisión aprobada con el checklist y simula la orden (no envía)
 python orquestador.py ejecutar --enviar      # la envía a la cuenta paper (solo con el visto bueno del usuario)
+python orquestador.py noticias               # el agente News revisa el universo y los trades abiertos (no envía órdenes)
 python orquestador.py gestionar              # revisa los trades abiertos: toma de ganancia, stop, vencimiento cercano (simula)
 python orquestador.py gestionar --enviar     # envía los cierres a la cuenta paper
 python orquestador.py repaso                 # repaso semanal: resultado, trades, errores, fichas y lecciones propuestas

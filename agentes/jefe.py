@@ -19,6 +19,7 @@ import json
 from datetime import date
 from typing import Optional
 
+from agentes import config
 from agentes.consejo import Debate
 from agentes.modelo import Modelo, Pedido, cargar_skill, lecciones_aprobadas
 
@@ -78,6 +79,7 @@ def _sistema(hoy: date) -> str:
             f"Sos el jefe de un sistema que vende primas de opciones en una cuenta paper (dinero simulado). Hoy es "
             f"{hoy.isoformat()}. Escribí en español rioplatense, corto y concreto.",
             "Usá solo los datos del mensaje. Nunca inventes precios ni strikes.",
+            config.regla_earnings(hoy),
             "## Tu tarea\n" + TAREA,
             "## Skill jefe-opciones-primas\n" + cargar_skill("jefe-opciones-primas"),
             lecciones_aprobadas(),

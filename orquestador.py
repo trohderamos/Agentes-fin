@@ -233,6 +233,32 @@ def cmd_ronda(broker: Broker, args: argparse.Namespace) -> None:
         raise ErrorBroker(f"La ronda tuvo errores en: {', '.join(errores)}.")
 
 
+def cmd_noticias(broker: Broker, args: argparse.Namespace) -> None:
+    """El agente News revisa cada activo del universo y los trades abiertos. No envía órdenes."""
+    from agentes.modelo import ModeloClaude
+    from agentes.noticias import formatear_noticias, registrar_noticias, revisar_noticias
+    from datos.cadena import hoy_nueva_york
+
+    broker.cuenta()
+    modelo = ModeloClaude(modelo=args.modelo)
+    hoy = hoy_nueva_york()
+    errores = []
+    for simbolo in args.simbolos:
+        try:
+            d = asyncio.run(revisar_noticias(broker, modelo, simbolo, hoy))
+        except (ErrorBroker, ErrorModelo, ValueError) as e:
+            print(f"Error en {simbolo}: {e}\n")
+            errores.append(simbolo)
+            continue
+        print(formatear_noticias(d) + "\n")
+        if not args.sin_guardar:
+            registrar_noticias(d)
+    if not args.sin_guardar:
+        print("Guardado en bitacora/noticias.jsonl")
+    if errores:
+        raise ErrorBroker(f"La revisión de noticias tuvo errores en: {', '.join(errores)}.")
+
+
 def cmd_gestionar(broker: Broker, args: argparse.Namespace) -> None:
     from agentes.ejecucion import formatear, gestionar
     from datos.cadena import hoy_nueva_york
@@ -299,6 +325,12 @@ def armar_parser() -> argparse.ArgumentParser:
     ro.add_argument("--sin-guardar", action="store_true", help="No guarda el JSON ni escribe la bitácora.")
     ro.add_argument("--enviar", action="store_true", help="Envía las órdenes aprobadas a la cuenta paper.")
     ro.set_defaults(func=cmd_ronda)
+
+    no = sub.add_parser("noticias", help="El agente News revisa el universo y los trades abiertos (no envía órdenes).")
+    no.add_argument("--simbolos", nargs="+", type=str.upper, default=list(config.UNIVERSO))
+    no.add_argument("--modelo", default=config.MODELO, help="Modelo de Claude para el agente News.")
+    no.add_argument("--sin-guardar", action="store_true", help="No escribe bitacora/noticias.jsonl.")
+    no.set_defaults(func=cmd_noticias)
 
     ge = sub.add_parser("gestionar", help="Revisa las posiciones abiertas y cierra según el plan (simula sin --enviar).")
     ge.add_argument("--enviar", action="store_true", help="Envía las órdenes de cierre a la cuenta paper.")

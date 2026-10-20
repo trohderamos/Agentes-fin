@@ -144,6 +144,19 @@ class TestRiesgo(unittest.TestCase):
         ev[0]["impacto"] = "medio"
         self.assertFalse(revisar(self.put, HOY, 100_000, 600, self.freno, [], [], ev).vetado)
 
+    def test_earnings_no_vetan_en_la_semana_de_prueba(self):
+        ev = [{"fecha": (HOY + timedelta(days=3)).isoformat(), "evento": "Earnings NVDA", "tipo": "earnings", "impacto": "alto"}]
+        with mock.patch.object(config, "IGNORAR_EARNINGS_HASTA", HOY):
+            r = revisar(self.put, HOY, 100_000, 600, self.freno, [], [], ev)
+            self.assertFalse(r.vetado)
+            self.assertTrue(any("Earnings" in a for a in r.alertas))
+            self.assertIn("NO descartan", config.regla_earnings(HOY))
+            ev[0]["tipo"] = "macro"
+            self.assertTrue(revisar(self.put, HOY, 100_000, 600, self.freno, [], [], ev).vetado)
+        ev[0]["tipo"] = "earnings"
+        with mock.patch.object(config, "IGNORAR_EARNINGS_HASTA", HOY - timedelta(days=1)):
+            self.assertTrue(revisar(self.put, HOY, 100_000, 600, self.freno, [], [], ev).vetado)
+
     def test_capital_chico_veta(self):
         r = revisar(self.put, HOY, 10_000, 600, self.freno, [], [])
         self.assertTrue(any("por trade" in v for v in r.vetos))

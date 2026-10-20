@@ -237,6 +237,7 @@ def _sistema(miembro: str, hoy: date) -> str:
             f"Sos el {NOMBRES[miembro]} del consejo de un sistema que vende primas de opciones en una cuenta paper "
             f"(dinero simulado). Hoy es {hoy.isoformat()}. Escribí en español rioplatense, corto y con cifras.",
             "Usá solo los datos del mensaje. Nunca inventes precios, strikes ni datos de mercado.",
+            config.regla_earnings(hoy),
             "## Tu tarea\n" + TAREAS[miembro],
             "## Skill consejo-opciones-primas\n" + cargar_skill("consejo-opciones-primas"),
             lecciones_aprobadas(),

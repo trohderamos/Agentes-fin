@@ -7,6 +7,7 @@ partida puestos por Claude y se pueden ajustar acá.
 from __future__ import annotations
 
 import os
+from datetime import date
 
 # --- Estilo del usuario ---------------------------------------------------
 DIAS_MIN = 7
@@ -17,6 +18,28 @@ DELTA_OBJETIVO = 0.15
 # Eventos macro que descartan cualquier vencimiento que los incluya.
 TIPOS_EVENTO_GRANDE = ("fed", "inflacion", "empleo")
 ESTRUCTURAS_PERMITIDAS = ("spread_put", "spread_call", "iron_condor")
+
+# Semana de prueba en paper: el usuario pidió (20 oct 2026) que los earnings
+# dentro del plazo no descarten el trade, para ver a los agentes operar. Hasta
+# esta fecha inclusive los earnings son una alerta que pesan el consejo y el
+# jefe; después vuelven a descartar. Fed, CPI y empleo descartan siempre.
+IGNORAR_EARNINGS_HASTA = date(2026, 10, 23)
+
+
+def earnings_descartan(hoy: date) -> bool:
+    return hoy > IGNORAR_EARNINGS_HASTA
+
+
+def regla_earnings(hoy: date) -> str:
+    """La regla de earnings vigente, para las instrucciones de los agentes."""
+    if earnings_descartan(hoy):
+        return "Cualquier earnings dentro del plazo descarta el trade."
+    return (
+        f"Semana de prueba hasta el {IGNORAR_EARNINGS_HASTA.isoformat()}: por decisión del usuario, los "
+        "earnings dentro del plazo (del activo o de las empresas de mayor peso de un ETF) NO descartan el "
+        "trade. Pesalos como riesgo (tamaño, distancia del strike, estructura), no como veto. "
+        "Fed, CPI y empleo siguen descartando."
+    )
 
 # Subyacentes que recorre `orquestador.py ronda`. GLD (oro) y USO (petróleo)
 # no tienen balances, así que siguen operables en temporada de earnings.

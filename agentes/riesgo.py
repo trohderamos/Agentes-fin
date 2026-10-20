@@ -87,7 +87,12 @@ def revisar(
         except ValueError:
             continue
         if hoy <= fecha <= c.vencimiento and e.get("impacto") == "alto":
-            veto(f"News marcó un evento de impacto alto dentro del plazo: {fecha.isoformat()} {e.get('evento')}.")
+            if e.get("tipo") == "earnings" and not config.earnings_descartan(hoy):
+                r.alertas.append(
+                    f"Earnings dentro del plazo (no descartan en la semana de prueba): {fecha.isoformat()} {e.get('evento')}."
+                )
+            else:
+                veto(f"News marcó un evento de impacto alto dentro del plazo: {fecha.isoformat()} {e.get('evento')}.")
     for e in eventos_en_plazo(eventos, hoy, c.vencimiento):
         if e.tipo == "dividendo" and any(p.tipo == "call" for p in c.vendidos):
             r.alertas.append(f"Ex-dividendo el {e.fecha.isoformat()} con una call vendida: riesgo de asignación anticipada.")
