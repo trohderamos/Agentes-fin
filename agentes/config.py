@@ -20,9 +20,11 @@ ESTRUCTURAS_PERMITIDAS = ("spread_put", "spread_call", "iron_condor")
 
 # Subyacentes que recorre `orquestador.py ronda`. GLD (oro) y USO (petróleo)
 # no tienen balances, así que siguen operables en temporada de earnings.
+# SMH (semiconductores) sí tiene balances: News mira los de sus mayores
+# empresas. Se eligió sobre SOXX porque tiene más vencimientos semanales.
 # SLV quedó afuera: la prima a delta 0.15 es tan chica que los costos se
 # comen más de la mitad del crédito.
-UNIVERSO = ("SPY", "GLD", "USO")
+UNIVERSO = ("SPY", "GLD", "USO", "SMH")
 
 # Ancho de las alas de los spreads, en dólares por cada 100 de precio del
 # subyacente (con SPY a 770, 0.75 da alas de 6 dólares).

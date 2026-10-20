@@ -39,6 +39,7 @@ MAYORES_DEL_INDICE = {
     "SPY": ["NVDA", "MSFT", "AAPL", "AMZN", "GOOGL", "META"],
     "QQQ": ["NVDA", "MSFT", "AAPL", "AMZN", "GOOGL", "META"],
     "IWM": [],
+    "SMH": ["NVDA", "TSM", "AVGO", "AMD", "ASML", "MU"],
 }
 
 
