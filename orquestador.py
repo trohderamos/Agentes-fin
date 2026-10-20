@@ -209,6 +209,30 @@ def cmd_ejecutar(broker: Broker, args: argparse.Namespace) -> None:
     print(formatear([abrir(broker, decision, hoy, enviar=args.enviar, trades=trades)]))
 
 
+def cmd_ronda(broker: Broker, args: argparse.Namespace) -> None:
+    """Ciclo y ejecución para cada subyacente del universo, uno detrás del otro.
+
+    Se ejecuta después de cada ciclo para que la orden aprobada de un activo no
+    quede tapada por la decisión del siguiente, y para que los límites de
+    riesgo de cada ciclo ya vean lo que se abrió antes.
+    """
+    errores = []
+    for simbolo in args.simbolos:
+        print(f"\n{'=' * 20} {simbolo} {'=' * 20}")
+        sub = argparse.Namespace(**{**vars(args), "simbolo": simbolo})
+        try:
+            cmd_ciclo(broker, sub)
+            print()
+            cmd_ejecutar(broker, sub)
+        except CuentaRealDetectada:
+            raise
+        except (ErrorBroker, ErrorModelo, ValueError) as e:
+            print(f"Error en {simbolo}: {e}")
+            errores.append(simbolo)
+    if errores:
+        raise ErrorBroker(f"La ronda tuvo errores en: {', '.join(errores)}.")
+
+
 def cmd_gestionar(broker: Broker, args: argparse.Namespace) -> None:
     from agentes.ejecucion import formatear, gestionar
     from datos.cadena import hoy_nueva_york
@@ -267,6 +291,14 @@ def armar_parser() -> argparse.ArgumentParser:
     ej = sub.add_parser("ejecutar", help="Envía a paper la orden que aprobó el jefe hoy (simula sin --enviar).")
     ej.add_argument("--enviar", action="store_true", help="Envía la orden de verdad a la cuenta paper.")
     ej.set_defaults(func=cmd_ejecutar)
+
+    ro = sub.add_parser("ronda", help="Ciclo y ejecución para cada subyacente del universo (simula sin --enviar).")
+    ro.add_argument("--simbolos", nargs="+", type=str.upper, default=list(config.UNIVERSO))
+    ro.add_argument("--sin-modelo", action="store_true", help="No llama a Claude: reglas fijas.")
+    ro.add_argument("--modelo", default=config.MODELO, help="Modelo de Claude para los agentes.")
+    ro.add_argument("--sin-guardar", action="store_true", help="No guarda el JSON ni escribe la bitácora.")
+    ro.add_argument("--enviar", action="store_true", help="Envía las órdenes aprobadas a la cuenta paper.")
+    ro.set_defaults(func=cmd_ronda)
 
     ge = sub.add_parser("gestionar", help="Revisa las posiciones abiertas y cierra según el plan (simula sin --enviar).")
     ge.add_argument("--enviar", action="store_true", help="Envía las órdenes de cierre a la cuenta paper.")

@@ -167,7 +167,7 @@ def _armar(
         )
     sufijo = "-".join(f"{p.tipo[0].upper()}{p.strike:g}" for p in vendidos)
     return Candidato(
-        id=f"{estructura}-{venc.fecha.isoformat()}-{sufijo}",
+        id=f"{subyacente}-{estructura}-{venc.fecha.isoformat()}-{sufijo}",
         estructura=estructura,
         subyacente=subyacente,
         vencimiento=venc.fecha,
