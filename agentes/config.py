@@ -99,8 +99,8 @@ FACTOR_IV_REALIZADA = 1.15
 # El usuario eligió (20 oct 2026) Sonnet para los cinco agentes de research y
 # Opus para el consejo y el jefe, que son los que deciden. Research junta datos
 # y los resume con esquema fijo; el juicio fino queda en el consejo y el jefe.
-MODELO = os.environ.get("AGENTES_MODELO", "claude-opus-5-5")
-MODELO_RESEARCH = os.environ.get("AGENTES_MODELO_RESEARCH", "claude-sonnet-5-5")
+MODELO = os.environ.get("AGENTES_MODELO", "claude-opus-5")
+MODELO_RESEARCH = os.environ.get("AGENTES_MODELO_RESEARCH", "claude-sonnet-5")
 # Agentes que usan MODELO_RESEARCH; el resto (consejo, jefe, repaso) usa MODELO.
 AGENTES_RESEARCH = ("Chart", "News", "Fundamentals", "Strategy", "Risk")
 
