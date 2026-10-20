@@ -94,10 +94,16 @@ class TestSeguridad(unittest.TestCase):
             b.cadena_opciones("SPY", date(2026, 10, 23), date(2026, 11, 6))
         self.assertEqual(len(b._sesion.pedidos), 1)
 
-    def test_no_hay_metodos_de_ordenes(self):
-        for nombre in dir(AlpacaPaper):
-            self.assertNotIn("orden", nombre.lower())
-            self.assertNotIn("order", nombre.lower())
+    def test_ordenes_bloqueadas_por_defecto(self):
+        # Desde la fase 5 existen métodos de órdenes, pero por defecto no envían nada.
+        from broker import OrdenesBloqueadas, PataOrden
+
+        b = crear({URL_TRADING_PAPER + "/v2/account": Respuesta(CUENTA_PAPER)})
+        with self.assertRaises(OrdenesBloqueadas):
+            b.enviar_orden_multipata([PataOrden("SPY261023P00590000", "venta")], 1, 0.5, True, "x")
+        with self.assertRaises(OrdenesBloqueadas):
+            b.cancelar_orden("x")
+        self.assertEqual(b._sesion.pedidos, [])
 
 
 class TestCadena(unittest.TestCase):
@@ -122,6 +128,7 @@ class TestCadena(unittest.TestCase):
                 "snapshots": {
                     "SPY261106P00540000": snapshot(-0.08),
                     "SPY261106P00560000": snapshot(-0.18),
+                    "SPY1261106P00560000": snapshot(-0.18),  # contrato ajustado: se ignora
                 },
                 "next_page_token": None,
             },

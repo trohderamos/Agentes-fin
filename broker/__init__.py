@@ -12,7 +12,14 @@ from broker.base import (
     Cuenta,
     CuentaRealDetectada,
     ErrorBroker,
+    EstadoOrden,
     FaltanClaves,
+    Noticia,
+    OrdenesBloqueadas,
+    PataOrden,
+    Reloj,
+    Posicion,
+    PuntoPatrimonio,
 )
 
 
@@ -31,6 +38,13 @@ __all__ = [
     "Cuenta",
     "CuentaRealDetectada",
     "ErrorBroker",
+    "EstadoOrden",
     "FaltanClaves",
+    "OrdenesBloqueadas",
+    "PataOrden",
+    "Reloj",
+    "Noticia",
+    "Posicion",
+    "PuntoPatrimonio",
     "crear_broker",
 ]

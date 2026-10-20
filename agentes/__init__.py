@@ -1,1 +1,1 @@
-"""Los nueve agentes del sistema. Se construyen a partir de la fase 2."""
+"""Los diez agentes del sistema: research, consejo y jefe."""

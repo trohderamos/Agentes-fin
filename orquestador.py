@@ -3,6 +3,14 @@
 Por ahora es de solo lectura: no envía órdenes.
 
 Uso:
+    python orquestador.py ciclo                  # research, consejo y jefe; la decisión queda en la bitácora
+    python orquestador.py ciclo --sin-modelo     # mismo ciclo sin llamar a Claude
+    python orquestador.py ejecutar               # simula el envío de la orden que aprobó el jefe hoy
+    python orquestador.py ejecutar --enviar      # la envía a la cuenta paper
+    python orquestador.py gestionar [--enviar]   # revisa las posiciones abiertas y cierra según el plan
+    python orquestador.py repaso                 # repaso semanal: resultado, trades, errores, fichas y lecciones
+    python orquestador.py research               # agentes de research sobre SPY: 1 a 3 candidatos o "no hay trade"
+    python orquestador.py research --sin-modelo  # mismo circuito sin llamar a Claude (solo cálculos)
     python orquestador.py informe                # informe de datos de SPY del día
     python orquestador.py estado                 # cuenta + cadena de SPY
     python orquestador.py estado --simbolo QQQ
@@ -13,12 +21,15 @@ Uso:
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import sys
+from datetime import date, datetime
 from pathlib import Path
 from typing import Optional
 
 from broker import Broker, ContratoOpcion, Cuenta, CuentaRealDetectada, ErrorBroker, crear_broker
+from agentes.modelo import ErrorModelo
 from datos.informe import formatear_informe, generar_informe
 from datos.cadena import DIAS_MAX, DIAS_MIN, Vencimiento, cadena_en_ventana, filtrar_por_delta
 
@@ -116,8 +127,147 @@ def cmd_informe(broker: Broker, args: argparse.Namespace) -> None:
         print(f"\nGuardado en {ruta.relative_to(Path(__file__).parent)}")
 
 
+CARPETA_RESEARCH = Path(__file__).parent / "datos" / "research"
+
+
+def cmd_research(broker: Broker, args: argparse.Namespace) -> None:
+    from agentes.formato import formatear_research
+    from agentes.modelo import ModeloClaude
+    from agentes.research import Research
+
+    broker.cuenta()  # verifica que sea paper antes de pedir nada más
+    modelo = None if args.sin_modelo else ModeloClaude(modelo=args.modelo)
+    resultado = asyncio.run(Research(broker, modelo, args.simbolo.upper()).correr())
+    print(formatear_research(resultado))
+    if not args.sin_guardar:
+        CARPETA_RESEARCH.mkdir(parents=True, exist_ok=True)
+        sufijo = "" if modelo else "-sin-modelo"
+        ruta = CARPETA_RESEARCH / f"{resultado.subyacente}-{resultado.fecha.isoformat()}{sufijo}.json"
+        ruta.write_text(json.dumps(resultado.a_dict(), ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+        print(f"\nGuardado en {ruta.relative_to(Path(__file__).parent)}")
+
+
+CARPETA_CICLOS = Path(__file__).parent / "datos" / "ciclos"
+
+
+def cmd_ciclo(broker: Broker, args: argparse.Namespace) -> None:
+    from agentes.ciclo import correr_ciclo
+    from agentes.formato import formatear_ciclo
+    from agentes.modelo import ModeloClaude
+
+    broker.cuenta()  # verifica que sea paper antes de pedir nada más
+    modelo = None if args.sin_modelo else ModeloClaude(modelo=args.modelo)
+    ciclo = asyncio.run(
+        correr_ciclo(broker, modelo, args.simbolo.upper(), guardar_en_bitacora=not args.sin_guardar)
+    )
+    print(formatear_ciclo(ciclo))
+    if not args.sin_guardar:
+        CARPETA_CICLOS.mkdir(parents=True, exist_ok=True)
+        sufijo = "" if modelo else "-sin-modelo"
+        hora = datetime.now().strftime("%H%M%S")
+        ruta = CARPETA_CICLOS / f"{ciclo.subyacente}-{ciclo.fecha.isoformat()}-{hora}{sufijo}.json"
+        ruta.write_text(json.dumps(ciclo.a_dict(), ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+        print(f"\nGuardado en {ruta.relative_to(Path(__file__).parent)} y en bitacora/decisiones.jsonl")
+
+
+CARPETA_REPASOS = Path(__file__).parent / "datos" / "repasos"
+
+
+def cmd_repaso(broker: Broker, args: argparse.Namespace) -> None:
+    from agentes.modelo import ModeloClaude
+    from agentes.repaso import formatear_repaso, guardar_propuestas, repasar
+    from datos.cadena import hoy_nueva_york
+
+    broker.cuenta()  # verifica que sea paper antes de pedir nada más
+    modelo = None if args.sin_modelo else ModeloClaude(modelo=args.modelo)
+    hoy = date.fromisoformat(args.fecha) if args.fecha else hoy_nueva_york()
+    repaso = asyncio.run(repasar(broker, modelo, hoy, args.simbolo.upper()))
+    texto = formatear_repaso(repaso)
+    print(texto)
+    if not args.sin_guardar:
+        guardar_propuestas(repaso)
+        CARPETA_REPASOS.mkdir(parents=True, exist_ok=True)
+        base = CARPETA_REPASOS / f"repaso-{repaso.desde.isoformat()}"
+        base.with_suffix(".md").write_text(texto, encoding="utf-8")
+        base.with_suffix(".json").write_text(
+            json.dumps(repaso.a_dict(), ensure_ascii=False, indent=2, default=str), encoding="utf-8"
+        )
+        print(f"\nGuardado en {base.with_suffix('.md').relative_to(Path(__file__).parent)}")
+
+
+def cmd_ejecutar(broker: Broker, args: argparse.Namespace) -> None:
+    from agentes.bitacora import leer_decisiones, leer_ejecuciones, leer_trades
+    from agentes.ejecucion import abrir, decision_pendiente, formatear
+    from datos.cadena import hoy_nueva_york
+
+    hoy = hoy_nueva_york()
+    trades = leer_trades()
+    decision = decision_pendiente(hoy, leer_decisiones(), trades, leer_ejecuciones())
+    if decision is None:
+        print("No hay ninguna orden aprobada hoy pendiente de enviar.")
+        return
+    print(formatear([abrir(broker, decision, hoy, enviar=args.enviar, trades=trades)]))
+
+
+def cmd_ronda(broker: Broker, args: argparse.Namespace) -> None:
+    """Ciclo y ejecución para cada subyacente del universo, uno detrás del otro.
+
+    Se ejecuta después de cada ciclo para que la orden aprobada de un activo no
+    quede tapada por la decisión del siguiente, y para que los límites de
+    riesgo de cada ciclo ya vean lo que se abrió antes.
+    """
+    errores = []
+    for simbolo in args.simbolos:
+        print(f"\n{'=' * 20} {simbolo} {'=' * 20}")
+        sub = argparse.Namespace(**{**vars(args), "simbolo": simbolo})
+        try:
+            cmd_ciclo(broker, sub)
+            print()
+            cmd_ejecutar(broker, sub)
+        except CuentaRealDetectada:
+            raise
+        except (ErrorBroker, ErrorModelo, ValueError) as e:
+            print(f"Error en {simbolo}: {e}")
+            errores.append(simbolo)
+    if errores:
+        raise ErrorBroker(f"La ronda tuvo errores en: {', '.join(errores)}.")
+
+
+def cmd_noticias(broker: Broker, args: argparse.Namespace) -> None:
+    """El agente News revisa cada activo del universo y los trades abiertos. No envía órdenes."""
+    from agentes.modelo import ModeloClaude
+    from agentes.noticias import formatear_noticias, registrar_noticias, revisar_noticias
+    from datos.cadena import hoy_nueva_york
+
+    broker.cuenta()
+    modelo = ModeloClaude(modelo=args.modelo)
+    hoy = hoy_nueva_york()
+    errores = []
+    for simbolo in args.simbolos:
+        try:
+            d = asyncio.run(revisar_noticias(broker, modelo, simbolo, hoy))
+        except (ErrorBroker, ErrorModelo, ValueError) as e:
+            print(f"Error en {simbolo}: {e}\n")
+            errores.append(simbolo)
+            continue
+        print(formatear_noticias(d) + "\n")
+        if not args.sin_guardar:
+            registrar_noticias(d)
+    if not args.sin_guardar:
+        print("Guardado en bitacora/noticias.jsonl")
+    if errores:
+        raise ErrorBroker(f"La revisión de noticias tuvo errores en: {', '.join(errores)}.")
+
+
+def cmd_gestionar(broker: Broker, args: argparse.Namespace) -> None:
+    from agentes.ejecucion import formatear, gestionar
+    from datos.cadena import hoy_nueva_york
+
+    print(formatear(gestionar(broker, hoy_nueva_york(), enviar=args.enviar)))
+
+
 def armar_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="Agentes de venta de primas (fase 1: solo lectura).")
+    p = argparse.ArgumentParser(description="Agentes de venta de primas (solo lectura: no envía órdenes).")
     p.add_argument(
         "--feed",
         default="indicative",
@@ -139,18 +289,65 @@ def armar_parser() -> argparse.ArgumentParser:
     i.add_argument("--simbolo", default="SPY")
     i.add_argument("--sin-guardar", action="store_true", help="No guarda el JSON del informe.")
     i.set_defaults(func=cmd_informe)
+
+    from agentes import config
+
+    r = sub.add_parser("research", help="Agentes de research: 1 a 3 candidatos o 'no hay trade hoy'.")
+    r.add_argument("--simbolo", default="SPY")
+    r.add_argument("--sin-modelo", action="store_true", help="No llama a Claude: solo los cálculos en código.")
+    r.add_argument("--modelo", default=config.MODELO, help="Modelo de Claude para los agentes.")
+    r.add_argument("--sin-guardar", action="store_true", help="No guarda el JSON del resultado.")
+    r.set_defaults(func=cmd_research)
+
+    c = sub.add_parser("ciclo", help="Research, consejo y jefe. No envía órdenes.")
+    c.add_argument("--simbolo", default="SPY")
+    c.add_argument("--sin-modelo", action="store_true", help="No llama a Claude: reglas fijas.")
+    c.add_argument("--modelo", default=config.MODELO, help="Modelo de Claude para los agentes.")
+    c.add_argument("--sin-guardar", action="store_true", help="No guarda el JSON ni escribe la bitácora.")
+    c.set_defaults(func=cmd_ciclo)
+
+    rp = sub.add_parser("repaso", help="Repaso semanal: resultado, trades, errores, fichas y lecciones.")
+    rp.add_argument("--simbolo", default="SPY")
+    rp.add_argument("--fecha", help="Un día de la semana a repasar (AAAA-MM-DD). Por defecto, esta semana.")
+    rp.add_argument("--sin-modelo", action="store_true", help="No propone lecciones (no llama a Claude).")
+    rp.add_argument("--modelo", default=config.MODELO, help="Modelo de Claude para el repaso.")
+    rp.add_argument("--sin-guardar", action="store_true", help="No guarda el informe ni las propuestas.")
+    rp.set_defaults(func=cmd_repaso)
+
+    ej = sub.add_parser("ejecutar", help="Envía a paper la orden que aprobó el jefe hoy (simula sin --enviar).")
+    ej.add_argument("--enviar", action="store_true", help="Envía la orden de verdad a la cuenta paper.")
+    ej.set_defaults(func=cmd_ejecutar)
+
+    ro = sub.add_parser("ronda", help="Ciclo y ejecución para cada subyacente del universo (simula sin --enviar).")
+    ro.add_argument("--simbolos", nargs="+", type=str.upper, default=list(config.UNIVERSO))
+    ro.add_argument("--sin-modelo", action="store_true", help="No llama a Claude: reglas fijas.")
+    ro.add_argument("--modelo", default=config.MODELO, help="Modelo de Claude para los agentes.")
+    ro.add_argument("--sin-guardar", action="store_true", help="No guarda el JSON ni escribe la bitácora.")
+    ro.add_argument("--enviar", action="store_true", help="Envía las órdenes aprobadas a la cuenta paper.")
+    ro.set_defaults(func=cmd_ronda)
+
+    no = sub.add_parser("noticias", help="El agente News revisa el universo y los trades abiertos (no envía órdenes).")
+    no.add_argument("--simbolos", nargs="+", type=str.upper, default=list(config.UNIVERSO))
+    no.add_argument("--modelo", default=config.MODELO, help="Modelo de Claude para el agente News.")
+    no.add_argument("--sin-guardar", action="store_true", help="No escribe bitacora/noticias.jsonl.")
+    no.set_defaults(func=cmd_noticias)
+
+    ge = sub.add_parser("gestionar", help="Revisa las posiciones abiertas y cierra según el plan (simula sin --enviar).")
+    ge.add_argument("--enviar", action="store_true", help="Envía las órdenes de cierre a la cuenta paper.")
+    ge.set_defaults(func=cmd_gestionar)
     return p
 
 
 def main(argv: Optional[list[str]] = None) -> int:
     args = armar_parser().parse_args(argv)
     try:
-        broker = crear_broker("alpaca-paper", feed_opciones=args.feed)
+        permitir = bool(getattr(args, "enviar", False))
+        broker = crear_broker("alpaca-paper", feed_opciones=args.feed, permitir_ordenes=permitir)
         args.func(broker, args)
     except CuentaRealDetectada as e:
         print(f"ALTO: {e}", file=sys.stderr)
         return 2
-    except (ErrorBroker, ValueError) as e:
+    except (ErrorBroker, ErrorModelo, ValueError) as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
     return 0
