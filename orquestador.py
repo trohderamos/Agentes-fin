@@ -243,7 +243,13 @@ def cmd_noticias(broker: Broker, args: argparse.Namespace) -> None:
     modelo = ModeloClaude(modelo=args.modelo)
     hoy = hoy_nueva_york()
     errores = []
-    for simbolo in args.simbolos:
+    simbolos = args.simbolos
+    if simbolos is None:  # el universo más los activos con un trade abierto
+        from agentes import config
+        from agentes.bitacora import leer_trades
+
+        simbolos = list(config.simbolos_a_revisar(leer_trades()))
+    for simbolo in simbolos:
         try:
             d = asyncio.run(revisar_noticias(broker, modelo, simbolo, hoy))
         except (ErrorBroker, ErrorModelo, ValueError) as e:
@@ -327,7 +333,13 @@ def armar_parser() -> argparse.ArgumentParser:
     ro.set_defaults(func=cmd_ronda)
 
     no = sub.add_parser("noticias", help="El agente News revisa el universo y los trades abiertos (no envía órdenes).")
-    no.add_argument("--simbolos", nargs="+", type=str.upper, default=list(config.UNIVERSO))
+    no.add_argument(
+        "--simbolos",
+        nargs="+",
+        type=str.upper,
+        default=None,
+        help="Por defecto, el universo más los activos con un trade abierto.",
+    )
     no.add_argument("--modelo", default=None, help="Modelo de Claude para el agente News (por defecto Sonnet).")
     no.add_argument("--sin-guardar", action="store_true", help="No escribe bitacora/noticias.jsonl.")
     no.set_defaults(func=cmd_noticias)
