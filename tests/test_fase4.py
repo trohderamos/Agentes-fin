@@ -17,6 +17,11 @@ from agentes.jefe import validar
 from tests.test_fase3 import HOY, BrokerResearch, ModeloFalso
 
 
+def datos_del_trade(pedido) -> dict:
+    """Los datos comunes que el consejo y el jefe reciben en las instrucciones."""
+    return json.loads(pedido.sistema.split("## Datos del trade (research, Risk y cálculos en código)\n", 1)[1])
+
+
 class ModeloConsejo(ModeloFalso):
     """Además de research, responde por el consejo y el jefe."""
 
@@ -28,11 +33,12 @@ class ModeloConsejo(ModeloFalso):
     async def pedir(self, pedido):
         if pedido.agente.startswith(("Ejecutor", "Escéptico", "Gestor", "Liquidez")):
             self.pedidos.append(pedido)
-            msg = json.loads(pedido.mensaje)
+            msg = datos_del_trade(pedido)
+            ronda = 2 if "Ronda 2 de 2" in pedido.mensaje else 1
             nombre = pedido.agente.split(" (")[0]
             p = {
                 "postura": "p",
-                "respuesta_a_otros": "r" if msg["ronda"] == 2 else "",
+                "respuesta_a_otros": "r" if ronda == 2 else "",
                 "voto": self.votos.get(nombre, "A FAVOR"),
                 "cambio_propuesto": "",
                 "confianza": "media",
@@ -47,7 +53,8 @@ class ModeloConsejo(ModeloFalso):
             return Respuesta(datos=p, costo_usd=0.01)
         if pedido.agente == "Jefe":
             self.pedidos.append(pedido)
-            msg = json.loads(pedido.mensaje)
+            msg = json.loads(pedido.mensaje.split("## Debate\n", 1)[1])
+            msg["debate"] = datos_del_trade(pedido)
             base = {"razon_principal": "r", "objecion_que_mas_peso": "o", "cambios_pedidos": [], "que_revisar_proximo_ciclo": ""}
             base.update(self.jefe(msg, msg["vuelta"]))
             from agentes.modelo import Respuesta
@@ -153,7 +160,7 @@ class TestCiclo(unittest.TestCase):
     def test_aprueba_y_registra(self):
         def jefe(msg, vuelta):
             d = msg["debate"]
-            return {"decision": "APROBAR", "orden_final": d["orden_por_defecto"], "plan_salida": d["plan_por_defecto"]}
+            return {"decision": "APROBAR", "orden_final": d["orden_por_defecto"], "plan_salida": d["plan_de_salida_por_defecto"]}
 
         modelo = ModeloConsejo(jefe=jefe)
         c = ciclo(modelo, self.archivo)
@@ -164,7 +171,10 @@ class TestCiclo(unittest.TestCase):
         self.assertEqual(agentes[-1], "Jefe")
         # En la segunda ronda cada uno ve las posturas de la primera.
         ronda2 = next(p for p in modelo.pedidos if "ronda 2" in p.agente)
-        self.assertIn("posturas_ronda_1", json.loads(ronda2.mensaje))
+        self.assertIn("## Posturas de la ronda 1", ronda2.mensaje)
+        # Los nueve llamados del consejo y el jefe comparten las instrucciones, para reusar el caché.
+        sistemas = {p.sistema for p in modelo.pedidos if p.agente not in ("Chart", "News", "Fundamentals", "Strategy", "Risk")}
+        self.assertEqual(len(sistemas), 1)
         # Solo el ejecutor deja orden.
         self.assertNotIn("orden", c.final.debate.rondas[0]["gestor"])
         self.assertEqual(c.final.decision["decision"], "APROBAR")
@@ -175,6 +185,42 @@ class TestCiclo(unittest.TestCase):
         self.assertIn("plan_salida", reg)
         self.assertIn("JEFE: APROBAR", formatear_ciclo(c))
         json.dumps(c.a_dict(), default=str)
+
+    def test_orden_lleva_las_patas_del_candidato_que_aprobo_el_jefe(self):
+        # 21 oct 2026: el jefe aprobó un candidato distinto del que debatió el consejo.
+        import copy
+
+        from agentes.ejecucion import trade_aprobado
+
+        def jefe(msg, vuelta):
+            d = msg["debate"]
+            return {"decision": "APROBAR", "orden_final": d["orden_por_defecto"], "plan_salida": d["plan_de_salida_por_defecto"]}
+
+        c = ciclo(ModeloConsejo(jefe=jefe), self.archivo)
+        debatido = c.final.debate.trade["candidato"]
+        otro = copy.deepcopy(c.final.research.candidatos[0])
+        venta = next(p for p in otro["candidato"]["patas"] if p["lado"] == "venta")
+        for p in otro["candidato"]["patas"]:
+            p["strike"] -= 3
+        otro["candidato"]["vencimiento"] = "2026-10-30"
+        otro["candidato"]["id"] = f"SPY-spread_put-2026-10-30-P{venta['strike']:g}"
+        c.final.research.candidatos.append(otro)
+        c.final.decision["orden_final"]["id"] = otro["candidato"]["id"]
+
+        reg = registro_bitacora(c)
+        self.assertEqual(reg["trade_debatido"], debatido["id"])
+        self.assertEqual(reg["orden_final"]["vencimiento"], "2026-10-30")
+        trade, problema = trade_aprobado(reg)
+        self.assertEqual(problema, "")
+        self.assertEqual(trade["vencimiento"], "2026-10-30")
+        self.assertEqual(
+            {(p["lado"], p["strike"]) for p in trade["patas"]},
+            {(p["lado"], p["strike"]) for p in otro["candidato"]["patas"]},
+        )
+        # Y el candidato debatido sigue resolviendo a sus propias patas.
+        c.final.decision["orden_final"]["id"] = debatido["id"]
+        trade, _ = trade_aprobado(registro_bitacora(c))
+        self.assertEqual(trade["vencimiento"], debatido["vencimiento"])
 
     def test_ajustar_vuelve_a_research_y_corta_en_la_segunda(self):
         modelo = ModeloConsejo(jefe=lambda msg, vuelta: {"decision": "AJUSTAR", "cambios_pedidos": ["más lejos"]})

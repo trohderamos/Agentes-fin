@@ -14,9 +14,7 @@ class TestRonda(unittest.TestCase):
         args = orquestador.armar_parser().parse_args(["ronda"])
         self.assertEqual(args.simbolos, list(config.UNIVERSO))
         self.assertFalse(args.enviar)
-        self.assertIn("GLD", config.UNIVERSO)
-        self.assertIn("USO", config.UNIVERSO)
-        self.assertIn("IBIT", config.UNIVERSO)
+        self.assertEqual(config.UNIVERSO, ("SPY", "QQQ"))
 
     def test_aviso_de_fin_de_semana_para_cripto(self):
         from datetime import date

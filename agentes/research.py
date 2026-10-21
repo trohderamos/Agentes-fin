@@ -25,9 +25,9 @@ from typing import Any, Optional
 from agentes import config
 from agentes.backtest import ResultadoBacktest, correr_backtest
 from agentes.bitacora import TradeRegistrado, leer_trades
-from agentes.estructuras import Candidato, ancho_objetivo, armar_candidatos
+from agentes.estructuras import Candidato, ancho_objetivo, armar_candidatos, resumen_candidato
 from agentes.freno import ResultadoFreno, evaluar_freno
-from agentes.modelo import Modelo, Pedido, cargar_skill, esquema_informe, lecciones_aprobadas
+from agentes.modelo import Modelo, Pedido, a_json, cargar_skill, esquema_informe, lecciones_aprobadas
 from agentes.riesgo import Revision, eventos_que_descartan, revisar
 from broker.base import Barra, Broker, Noticia
 from datos.cadena import cadena_en_ventana, hoy_nueva_york
@@ -296,8 +296,7 @@ ESQUEMA_RISK = esquema_informe(
 )
 
 
-def _json(datos: Any) -> str:
-    return json.dumps(datos, ensure_ascii=False, indent=1, default=str)
+_json = a_json
 
 
 # --- Versiones sin modelo (para probar el circuito sin gastar) -----------
@@ -591,7 +590,7 @@ class Research:
                             "informe_chart": r.chart,
                             "informe_news": r.news,
                             "informe_fundamentals": r.fundamentals,
-                            "candidatos": [c.a_dict() for c in validos],
+                            "candidatos": [resumen_candidato(c.a_dict()) for c in validos],
                             "descartados_por_limites": r.descartados,
                             "backtest_aproximado": r.backtests,
                             "ajustes_pedidos_por_el_jefe": ajustes or [],
