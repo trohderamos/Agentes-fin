@@ -10,6 +10,7 @@ ninguna, se usa la sesión de Claude Code que corre el SDK. Nunca se imprime.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -143,9 +144,16 @@ class ModeloClaude:
         )
         resultado: Optional[ResultMessage] = None
         try:
-            async for mensaje in query(prompt=pedido.mensaje, options=opciones):
-                if isinstance(mensaje, ResultMessage):
-                    resultado = mensaje
+            # Un agente colgado (Strategy en USO, 20 oct 2026) no puede frenar la
+            # ronda ni seguir gastando plan: se corta y el activo se saltea.
+            async with asyncio.timeout(config.TIMEOUT_AGENTE_SEGUNDOS):
+                async for mensaje in query(prompt=pedido.mensaje, options=opciones):
+                    if isinstance(mensaje, ResultMessage):
+                        resultado = mensaje
+        except TimeoutError:
+            raise ErrorModelo(
+                f"{pedido.agente}: no respondió en {config.TIMEOUT_AGENTE_SEGUNDOS:.0f} segundos, se cortó."
+            ) from None
         except Exception as e:
             raise ErrorModelo(f"{pedido.agente}: falló el llamado al modelo: {str(e)[:300]}") from None
         if resultado is None:

@@ -186,6 +186,42 @@ class TestCiclo(unittest.TestCase):
         self.assertIn("JEFE: APROBAR", formatear_ciclo(c))
         json.dumps(c.a_dict(), default=str)
 
+    def test_orden_lleva_las_patas_del_candidato_que_aprobo_el_jefe(self):
+        # 21 oct 2026: el jefe aprobó un candidato distinto del que debatió el consejo.
+        import copy
+
+        from agentes.ejecucion import trade_aprobado
+
+        def jefe(msg, vuelta):
+            d = msg["debate"]
+            return {"decision": "APROBAR", "orden_final": d["orden_por_defecto"], "plan_salida": d["plan_de_salida_por_defecto"]}
+
+        c = ciclo(ModeloConsejo(jefe=jefe), self.archivo)
+        debatido = c.final.debate.trade["candidato"]
+        otro = copy.deepcopy(c.final.research.candidatos[0])
+        venta = next(p for p in otro["candidato"]["patas"] if p["lado"] == "venta")
+        for p in otro["candidato"]["patas"]:
+            p["strike"] -= 3
+        otro["candidato"]["vencimiento"] = "2026-10-30"
+        otro["candidato"]["id"] = f"SPY-spread_put-2026-10-30-P{venta['strike']:g}"
+        c.final.research.candidatos.append(otro)
+        c.final.decision["orden_final"]["id"] = otro["candidato"]["id"]
+
+        reg = registro_bitacora(c)
+        self.assertEqual(reg["trade_debatido"], debatido["id"])
+        self.assertEqual(reg["orden_final"]["vencimiento"], "2026-10-30")
+        trade, problema = trade_aprobado(reg)
+        self.assertEqual(problema, "")
+        self.assertEqual(trade["vencimiento"], "2026-10-30")
+        self.assertEqual(
+            {(p["lado"], p["strike"]) for p in trade["patas"]},
+            {(p["lado"], p["strike"]) for p in otro["candidato"]["patas"]},
+        )
+        # Y el candidato debatido sigue resolviendo a sus propias patas.
+        c.final.decision["orden_final"]["id"] = debatido["id"]
+        trade, _ = trade_aprobado(registro_bitacora(c))
+        self.assertEqual(trade["vencimiento"], debatido["vencimiento"])
+
     def test_ajustar_vuelve_a_research_y_corta_en_la_segunda(self):
         modelo = ModeloConsejo(jefe=lambda msg, vuelta: {"decision": "AJUSTAR", "cambios_pedidos": ["más lejos"]})
         c = ciclo(modelo, self.archivo)

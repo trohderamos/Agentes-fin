@@ -109,3 +109,6 @@ def modelo_de_agente(agente: str) -> str:
     return MODELO_RESEARCH if agente in AGENTES_RESEARCH else MODELO
 # Tope de gasto por agente y por corrida, en dólares.
 PRESUPUESTO_AGENTE_USD = float(os.environ.get("AGENTES_PRESUPUESTO_USD", "1.0"))
+
+# Tiempo máximo de cada llamado a un agente. Si se pasa, el activo se saltea.
+TIMEOUT_AGENTE_SEGUNDOS = float(os.environ.get("AGENTES_TIMEOUT_SEGUNDOS", "600"))

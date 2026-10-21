@@ -112,7 +112,21 @@ def registro_bitacora(ciclo: ResultadoCiclo) -> dict:
     else:
         registro["sin_trade"] = r.motivo_no_trade
     if v.decision.get("orden_final"):
-        registro["orden_final"] = v.decision["orden_final"]
+        orden = dict(v.decision["orden_final"])
+        # El jefe puede aprobar otro candidato que el debatido: la orden lleva las
+        # patas del aprobado, que son las que se envían (agentes/ejecucion.py).
+        aprobado = next((x["candidato"] for x in r.candidatos if x["candidato"]["id"] == orden.get("id")), None)
+        if aprobado is not None:
+            orden.update(
+                {
+                    "estructura": aprobado["estructura"],
+                    "vencimiento": aprobado["vencimiento"],
+                    "patas": [{"tipo": p["tipo"], "lado": p["lado"], "strike": p["strike"]} for p in aprobado["patas"]],
+                    "credito": aprobado["credito"],
+                    "perdida_maxima": aprobado["perdida_maxima"],
+                }
+            )
+        registro["orden_final"] = orden
         registro["plan_salida"] = v.decision.get("plan_salida")
     return registro
 

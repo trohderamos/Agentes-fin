@@ -9,7 +9,7 @@ from unittest import mock
 
 from agentes import bitacora
 from agentes.bitacora import TradeRegistrado, leer_trades
-from agentes.ejecucion import abrir, decision_pendiente, gestionar, motivo_de_cierre
+from agentes.ejecucion import _id_cliente, abrir, decision_pendiente, gestionar, motivo_de_cierre
 from broker import OrdenesBloqueadas
 from broker.alpaca_paper import URL_TRADING_PAPER, AlpacaPaper
 from broker.base import ContratoOpcion, EstadoOrden, PataOrden, PuntoPatrimonio, Reloj
@@ -32,7 +32,7 @@ def decision(**extra):
         "vencimiento": "2026-10-26",
         "patas": [{"tipo": "put", "lado": "compra", "strike": 745.0}, {"tipo": "put", "lado": "venta", "strike": 750.0}],
         "perdida_maxima": 455.0,
-        "orden_final": {"id": "spread_put-2026-10-26-P750", "contratos": 2, "precio_limite": 0.45},
+        "orden_final": {"id": "SPY-spread_put-2026-10-26-P750", "contratos": 2, "precio_limite": 0.45},
         "plan_salida": {"tomar_ganancia": "x", "stop": "x", "cierre_por_tiempo": "x", "si_toca_el_strike": "x"},
     }
     d.update(extra)
@@ -137,6 +137,55 @@ class TestApertura(Base):
             r = abrir(b, d, HOY, enviar=True, trades=[], esperar=lambda s: None)
             self.assertFalse(r.enviado, r.checklist)
             self.assertEqual(b.ordenes, [])
+
+    def test_orden_con_el_candidato_que_aprobo_el_jefe(self):
+        # 21 oct 2026: el consejo debatió un condor al 4-nov y el jefe aprobó otro al 30-oct.
+        # La orden tiene que llevar las patas del aprobado, no las del debatido.
+        v, c = "SPY261026P00750000", "SPY261026P00745000"
+        debatido = {"vencimiento": "2026-11-04", "patas": [{"tipo": "put", "lado": "venta", "strike": 740.0},
+                                                         {"tipo": "put", "lado": "compra", "strike": 735.0}]}
+        d = decision(
+            trade_debatido="SPY-spread_put-2026-11-04-P740",
+            **debatido,
+            perdida_maxima=470.0,
+            orden_final={
+                "id": "SPY-spread_put-2026-10-26-P750", "contratos": 2, "precio_limite": 0.45,
+                "vencimiento": "2026-10-26", "perdida_maxima": 455.0,
+                "patas": [{"tipo": "put", "lado": "compra", "strike": 745.0}, {"tipo": "put", "lado": "venta", "strike": 750.0}],
+            },
+        )
+        b = BrokerOrdenes(COT, llena_credito=0.49)
+        r = abrir(b, d, HOY, enviar=True, trades=[], esperar=lambda s: None)
+        self.assertTrue(r.ejecutado, r.motivo)
+        for patas, *_ in b.ordenes:
+            self.assertEqual({(p.simbolo, p.lado) for p in patas}, {(v, "venta"), (c, "compra")})
+        (t,) = leer_trades(self.trades)
+        self.assertEqual((t.id, t.vencimiento), ("SPY-spread_put-2026-10-26-P750", date(2026, 10, 26)))
+
+    def test_no_envia_si_el_aprobado_no_se_identifica(self):
+        casos = [
+            # El jefe aprobó otro candidato y la orden no trae sus patas: solo están las del debatido.
+            decision(trade_debatido="SPY-spread_put-2026-11-04-P740", vencimiento="2026-11-04",
+                     patas=[{"tipo": "put", "lado": "venta", "strike": 740.0}, {"tipo": "put", "lado": "compra", "strike": 735.0}]),
+            # Las patas de la orden no coinciden con el id aprobado.
+            decision(orden_final={"id": "SPY-spread_put-2026-10-26-P750", "contratos": 2, "precio_limite": 0.45,
+                                  "vencimiento": "2026-11-04", "patas": [{"tipo": "put", "lado": "venta", "strike": 750.0},
+                                                                         {"tipo": "put", "lado": "compra", "strike": 745.0}]}),
+            decision(patas=[{"tipo": "put", "lado": "venta", "strike": 755.0}, {"tipo": "put", "lado": "compra", "strike": 750.0}]),
+        ]
+        for d in casos:
+            b = BrokerOrdenes(COT)
+            r = abrir(b, d, HOY, enviar=True, trades=[], esperar=lambda s: None)
+            self.assertFalse(r.enviado, r.motivo)
+            self.assertEqual(b.ordenes, [])
+            self.assertIn("Patas del candidato aprobado por el jefe", [n for n, ok, _ in r.checklist if not ok])
+        self.assertTrue(self.ejec.exists())  # queda registrado
+
+    def test_id_cliente_unico_en_reintentos(self):
+        tid = "SPY-iron_condor-2026-10-30-P689-C748"
+        ids = {_id_cliente("ab", tid, n) for n in range(3)} | {_id_cliente("ab", tid, 0) for _ in range(3)}
+        self.assertEqual(len(ids), 6)
+        self.assertTrue(all(len(i) <= 48 for i in ids))
 
     def test_decision_pendiente(self):
         d = decision()
