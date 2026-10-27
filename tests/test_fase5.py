@@ -9,7 +9,7 @@ from unittest import mock
 
 from agentes import bitacora
 from agentes.bitacora import TradeRegistrado, leer_trades
-from agentes.ejecucion import _id_cliente, abrir, decision_pendiente, gestionar, motivo_de_cierre
+from agentes.ejecucion import _id_cliente, abrir, decision_pendiente, escalera_entrada, gestionar, motivo_de_cierre, trade_aprobado
 from broker import OrdenesBloqueadas
 from broker.alpaca_paper import URL_TRADING_PAPER, AlpacaPaper
 from broker.base import ContratoOpcion, EstadoOrden, PataOrden, PuntoPatrimonio, Reloj
@@ -120,16 +120,36 @@ class TestApertura(Base):
         b = BrokerOrdenes(COT, llena_credito=0.40)
         r = abrir(b, decision(), HOY, enviar=True, trades=[], esperar=lambda s: None)
         self.assertFalse(r.ejecutado)
-        self.assertTrue(all(o[2] >= 0.45 for o in b.ordenes))
+        # Piso = 85% del crédito medio (0.49), no el precio_limite del debate (0.45).
+        self.assertEqual([o[2] for o in b.ordenes], [0.49, 0.48, 0.47, 0.46, 0.45, 0.44, 0.43, 0.42])
         self.assertEqual(leer_trades(self.trades), [])
         self.assertTrue(self.ejec.exists())
+
+    def test_piso_relativo_al_medio_no_al_debate(self):
+        # Lección aprobada el 27 oct 2026: el jefe había escrito 0.60 y el medio es 0.49.
+        d = decision(orden_final={"id": "SPY-spread_put-2026-10-26-P750", "contratos": 2, "precio_limite": 0.60})
+        b = BrokerOrdenes(COT, llena_credito=0.44)
+        r = abrir(b, d, HOY, enviar=True, trades=[], esperar=lambda s: None)
+        self.assertTrue(r.ejecutado, r.motivo)
+        self.assertEqual(b.ordenes[-1][2], 0.44)
+
+    def test_escalera_entrada(self):
+        self.assertEqual(escalera_entrada(1.23)[0], 1.23)
+        self.assertEqual(escalera_entrada(1.23)[-1], 1.05)
+        largo = escalera_entrada(3.0)  # no alcanza de a 0.01: el paso crece para llegar al piso
+        self.assertLessEqual(len(largo), 30)
+        self.assertEqual(largo[-1], 2.55)
+
+    def test_id_con_ancho_extra(self):
+        d = decision(orden_final={"id": "SPY-spread_put-2026-10-26-P750-A10", "contratos": 2, "precio_limite": 0.45})
+        self.assertIsNotNone(trade_aprobado(d)[0])
 
     def test_checklist_frena(self):
         casos = [
             (BrokerOrdenes(COT, abierto=False), decision()),
             (BrokerOrdenes(COT, minutos=10), decision()),
             (BrokerOrdenes(COT), decision(perdida_maxima=1500.0)),  # 2 contratos = 3% del capital
-            (BrokerOrdenes(COT), decision(orden_final={"id": "x", "contratos": 1, "precio_limite": 0.60})),
+            (BrokerOrdenes(COT, minutos=25), decision()),  # no entran los 15 minutos de negociación
             (BrokerOrdenes({VENTA: COT[VENTA]}), decision()),  # falta una cotización
             (BrokerOrdenes(COT), decision(patas=[{"tipo": "put", "lado": "venta", "strike": 750.0}])),  # sin protección
         ]

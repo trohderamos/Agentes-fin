@@ -23,6 +23,7 @@ Gestión (una vez por día hábil):
 
 from __future__ import annotations
 
+import math
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -45,6 +46,7 @@ from datos.iv import simbolo_occ
 
 MINUTOS_ANTES_DEL_CIERRE = 15
 ESPERA_SEGUNDOS = 120
+ESPERA_APERTURA = 30
 PASO = 0.01
 MAX_REBAJAS = 3
 MAX_INTENTOS_SALIDA = 15
@@ -111,11 +113,12 @@ def _negociar(
     tid: str,
     esperar: Callable[[float], None],
     r: Resultado,
+    espera: float = ESPERA_SEGUNDOS,
 ) -> Optional[EstadoOrden]:
     """Manda la orden a cada precio de la lista hasta que se llene. Devuelve la orden llena o None."""
     for n, precio in enumerate(precios):
         orden = broker.enviar_orden_multipata(patas, contratos, round(precio, 2), abrir, _id_cliente("ab" if abrir else "ci", tid, n))
-        esperar(ESPERA_SEGUNDOS)
+        esperar(espera)
         estado = broker.estado_orden(orden.id)
         r.intentos.append({"precio": round(precio, 2), "estado": estado.estado, "llenados": estado.contratos_llenados})
         if estado.llena:
@@ -154,7 +157,8 @@ def _coincide_con_id(tid: str, subyacente: str, vencimiento: str, patas: list[di
     marca = f"-{vencimiento}-"
     if not tid.startswith(f"{subyacente}-") or marca not in tid:
         return False
-    en_id = set(tid.split(marca, 1)[1].split("-"))
+    # Un "-A10" al final es el ancho de las alas, no un strike.
+    en_id = {x for x in tid.split(marca, 1)[1].split("-") if not x.startswith("A")}
     vendidos = {f"{p['tipo'][0].upper()}{float(p['strike']):g}" for p in patas if p.get("lado") == "venta"}
     return bool(vendidos) and en_id == vendidos
 
@@ -190,6 +194,20 @@ def trade_aprobado(decision: dict) -> tuple[Optional[dict], str]:
         strikes = ", ".join(f"{p.get('lado')} {p.get('tipo')} {p.get('strike')}" for p in trade["patas"])
         return None, f"Las patas ({trade['vencimiento']}: {strikes}) no coinciden con el id aprobado {tid}."
     return trade, ""
+
+
+def escalera_entrada(medio: float) -> list[float]:
+    """Créditos a pedir: del medio al piso (una fracción del medio), en los minutos de negociación."""
+    inicio = round(medio, 2)
+    piso = round(medio * config.FRACCION_PISO_ENTRADA, 2)
+    intentos = max(1, int(config.MINUTOS_NEGOCIAR_ENTRADA * 60 // ESPERA_APERTURA))
+    paso = max(PASO, math.ceil((inicio - piso) / max(1, intentos - 1) * 100 - 1e-9) / 100)
+    precios = [inicio]
+    while len(precios) < intentos and precios[-1] - paso >= piso - 1e-9:
+        precios.append(round(precios[-1] - paso, 2))
+    if precios[-1] > piso and len(precios) < intentos:
+        precios.append(piso)
+    return precios
 
 
 def abrir(
@@ -242,31 +260,27 @@ def abrir(
     )
     reloj = broker.reloj()
     minutos = (reloj.proximo_cierre - reloj.ahora).total_seconds() / 60
-    check("Mercado abierto y a más de 15 minutos del cierre", reloj.abierto and minutos > MINUTOS_ANTES_DEL_CIERRE, f"{minutos:.0f} min al cierre")
+    margen = MINUTOS_ANTES_DEL_CIERRE + config.MINUTOS_NEGOCIAR_ENTRADA
+    check(f"Mercado abierto y a más de {margen} minutos del cierre", reloj.abierto and minutos > margen, f"{minutos:.0f} min al cierre")
 
-    minimo = float(orden["precio_limite"])
+    # El piso sale del crédito medio de ahora, no del precio_limite del debate
+    # (lección aprobada el 27 oct 2026: 2 de 3 aprobados no se llenaron por eso).
     if cotizadas:
         medio, natural = credito_actual(patas, cot)
-        check("El crédito medio actual alcanza el mínimo aprobado", medio >= minimo, f"medio {medio:.2f}, mínimo {minimo:.2f}")
+        check("Crédito medio positivo", medio > 0, f"medio {medio:.2f}, natural {natural:.2f}")
     if not all(ok for _, ok, _ in r.checklist):
         r.motivo = "No pasa el checklist: " + "; ".join(n for n, ok, _ in r.checklist if not ok)
         return _cerrar_registro(r, registrar and enviar)
 
-    inicio = round(medio, 2)
-    precios = [inicio]
-    for _ in range(MAX_REBAJAS):
-        siguiente = round(precios[-1] - 2 * PASO if precios[-1] - minimo > 0.05 else precios[-1] - PASO, 2)
-        if siguiente < minimo:
-            break
-        precios.append(siguiente)
+    precios = escalera_entrada(medio)
     if not enviar:
         r.motivo = f"Simulación: se mandaría {r.contratos} contrato(s) a {precios} de crédito."
         return _cerrar_registro(r, False)
 
     r.enviado = True
-    lleno = _negociar(broker, patas, r.contratos, precios, True, tid, esperar, r)
+    lleno = _negociar(broker, patas, r.contratos, precios, True, tid, esperar, r, ESPERA_APERTURA)
     if lleno is None or not lleno.llena:
-        r.motivo = r.motivo or "No se llenó sin bajar del crédito mínimo aprobado: se canceló."
+        r.motivo = r.motivo or f"No se llenó entre {precios[0]:.2f} y el piso de {precios[-1]:.2f}: se canceló."
         return _cerrar_registro(r, registrar)
     r.ejecutado = True
     r.precio = abs(lleno.precio_promedio if lleno.precio_promedio is not None else lleno.limite)
