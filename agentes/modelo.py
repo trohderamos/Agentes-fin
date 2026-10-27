@@ -10,6 +10,8 @@ ninguna, se usa la sesión de Claude Code que corre el SDK. Nunca se imprime.
 
 from __future__ import annotations
 
+import asyncio
+import json
 import os
 import re
 import tempfile
@@ -67,7 +69,20 @@ class Respuesta:
     avisos: list[str] = field(default_factory=list)
 
 
+def a_json(datos: Any) -> str:
+    """JSON compacto para los mensajes: sin sangría ni espacios, que también cuentan como tokens."""
+    return json.dumps(datos, ensure_ascii=False, separators=(",", ":"), default=str)
+
+
 _CONFIG_AISLADA = Path(tempfile.gettempdir()) / "agentes-fin-claude"
+
+
+# Claude Code guarda en caché cada mensaje por una hora, y escribir ese caché
+# cuesta el doble que leer el mensaje sin caché. Casi ningún mensaje de los
+# agentes se repite después de unos minutos (los que se reusan son los del
+# consejo y el jefe, que corren seguidos), así que el caché de 5 minutos, que
+# cuesta 1.25 veces, alcanza y baja cerca de un 25% cada llamado.
+ENTORNO_CACHE = {"FORCE_PROMPT_CACHING_5M": "1"}
 
 
 def entorno_aislado() -> dict[str, str]:
@@ -100,17 +115,22 @@ class Modelo(Protocol):
 class ModeloClaude:
     """Modelo real con el Claude Agent SDK."""
 
-    def __init__(self, modelo: str = config.MODELO, presupuesto_usd: float = config.PRESUPUESTO_AGENTE_USD):
+    def __init__(self, modelo: Optional[str] = None, presupuesto_usd: float = config.PRESUPUESTO_AGENTE_USD):
+        # Sin modelo, cada agente usa el que le toca (config.modelo_de_agente):
+        # Sonnet en research, Opus en el consejo y el jefe. Con modelo, ese para todos.
         self.modelo = modelo
         self.presupuesto_usd = presupuesto_usd
+        # Gasto de cada llamado (agente, costo y tokens), para ver qué agente gasta más.
+        self.gastos: list[dict] = []
 
     async def pedir(self, pedido: Pedido) -> Respuesta:
         from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
 
         herramientas = ["WebSearch"] if pedido.busqueda_web else []
+        modelo = self.modelo or config.modelo_de_agente(pedido.agente.split(" (")[0])
         opciones = ClaudeAgentOptions(
             system_prompt=pedido.sistema,
-            model=self.modelo,
+            model=modelo,
             tools=herramientas,
             allowed_tools=herramientas,
             permission_mode="dontAsk",
@@ -120,13 +140,20 @@ class ModeloClaude:
             max_budget_usd=self.presupuesto_usd,
             output_format={"type": "json_schema", "schema": pedido.esquema},
             # Con API key u OAuth token, aislado; sin ninguno, con la sesión que lo corre.
-            env=entorno_aislado(),
+            env={**entorno_aislado(), **ENTORNO_CACHE},
         )
         resultado: Optional[ResultMessage] = None
         try:
-            async for mensaje in query(prompt=pedido.mensaje, options=opciones):
-                if isinstance(mensaje, ResultMessage):
-                    resultado = mensaje
+            # Un agente colgado (Strategy en USO, 20 oct 2026) no puede frenar la
+            # ronda ni seguir gastando plan: se corta y el activo se saltea.
+            async with asyncio.timeout(config.TIMEOUT_AGENTE_SEGUNDOS):
+                async for mensaje in query(prompt=pedido.mensaje, options=opciones):
+                    if isinstance(mensaje, ResultMessage):
+                        resultado = mensaje
+        except TimeoutError:
+            raise ErrorModelo(
+                f"{pedido.agente}: no respondió en {config.TIMEOUT_AGENTE_SEGUNDOS:.0f} segundos, se cortó."
+            ) from None
         except Exception as e:
             raise ErrorModelo(f"{pedido.agente}: falló el llamado al modelo: {str(e)[:300]}") from None
         if resultado is None:
@@ -136,6 +163,19 @@ class ModeloClaude:
             if resultado.errors:
                 detalle += ": " + "; ".join(resultado.errors)[:300]
             raise ErrorModelo(f"{pedido.agente}: el modelo terminó con error ({detalle}).")
+        uso = resultado.usage or {}
+        self.gastos.append(
+            {
+                "agente": pedido.agente,
+                "modelo": modelo,
+                "costo_usd": round(resultado.total_cost_usd or 0.0, 4),
+                "entrada": uso.get("input_tokens", 0),
+                "cache_escrito": uso.get("cache_creation_input_tokens", 0),
+                "cache_leido": uso.get("cache_read_input_tokens", 0),
+                "salida": uso.get("output_tokens", 0),
+                "turnos": resultado.num_turns,
+            }
+        )
         return Respuesta(
             datos=resultado.structured_output,
             costo_usd=resultado.total_cost_usd,

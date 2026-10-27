@@ -43,16 +43,21 @@ def regla_eventos(hoy: date) -> str:
         "(tamaño, distancia del strike, estructura, vencimiento antes o después del evento), no como veto."
     )
 
-# Subyacentes que recorre `orquestador.py ronda`. GLD (oro) y USO (petróleo)
-# no tienen balances, así que siguen operables en temporada de earnings.
-# SMH (semiconductores) sí tiene balances: News mira los de sus mayores
-# empresas. Se eligió sobre SOXX porque tiene más vencimientos semanales.
-# SLV quedó afuera: la prima a delta 0.15 es tan chica que los costos se
-# comen más de la mitad del crédito.
-# IBIT (bitcoin) no tiene balances pero su subyacente opera también el fin
-# de semana: puede abrir el lunes con un salto. ETHA (ethereum) quedó afuera
-# por ahora: solo tiene dos vencimientos por semana y se mueve con IBIT.
-UNIVERSO = ("SPY", "QQQ", "GLD", "USO", "SMH", "IBIT")
+# Subyacentes en los que se buscan trades nuevos (`orquestador.py ronda` y la
+# revisión de noticias). El 20 oct 2026 el usuario lo achicó a SPY y QQQ para
+# gastar menos plan: cada activo son diez agentes por ronda. Quedaron afuera
+# GLD (oro), USO (petróleo), SMH (semis) e IBIT (bitcoin); se pueden volver a
+# sumar acá o pasarlos a mano con `--simbolos`.
+# Las posiciones abiertas se gestionan igual, sea el activo del universo o no:
+# `gestionar` sale de la bitácora, y la revisión de noticias suma los activos
+# con trades abiertos (ver simbolos_a_revisar).
+UNIVERSO = ("SPY", "QQQ")
+def simbolos_a_revisar(trades) -> tuple[str, ...]:
+    """El universo más los activos con un trade abierto, sin repetir."""
+    abiertos = [t.subyacente for t in trades if t.estado == "abierto"]
+    return tuple(dict.fromkeys([*UNIVERSO, *abiertos]))
+
+
 # Activos cuyo subyacente cotiza 24/7: los agentes tienen en cuenta el salto
 # del fin de semana.
 ACTIVOS_24_7 = ("IBIT", "ETHA")
@@ -91,6 +96,19 @@ SLIPPAGE_PATA = 0.02
 FACTOR_IV_REALIZADA = 1.15
 
 # --- Modelo ---------------------------------------------------------------
-MODELO = os.environ.get("AGENTES_MODELO", "claude-opus-5-5")
+# El usuario eligió (20 oct 2026) Sonnet para los cinco agentes de research y
+# Opus para el consejo y el jefe, que son los que deciden. Research junta datos
+# y los resume con esquema fijo; el juicio fino queda en el consejo y el jefe.
+MODELO = os.environ.get("AGENTES_MODELO", "claude-opus-5")
+MODELO_RESEARCH = os.environ.get("AGENTES_MODELO_RESEARCH", "claude-sonnet-5")
+# Agentes que usan MODELO_RESEARCH; el resto (consejo, jefe, repaso) usa MODELO.
+AGENTES_RESEARCH = ("Chart", "News", "Fundamentals", "Strategy", "Risk")
+
+
+def modelo_de_agente(agente: str) -> str:
+    return MODELO_RESEARCH if agente in AGENTES_RESEARCH else MODELO
 # Tope de gasto por agente y por corrida, en dólares.
 PRESUPUESTO_AGENTE_USD = float(os.environ.get("AGENTES_PRESUPUESTO_USD", "1.0"))
+
+# Tiempo máximo de cada llamado a un agente. Si se pasa, el activo se saltea.
+TIMEOUT_AGENTE_SEGUNDOS = float(os.environ.get("AGENTES_TIMEOUT_SEGUNDOS", "600"))

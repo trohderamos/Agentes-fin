@@ -24,6 +24,7 @@ Gestión (una vez por día hábil):
 from __future__ import annotations
 
 import time
+import uuid
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from typing import Callable, Optional
@@ -92,8 +93,13 @@ def debito_actual(patas: list[PataOrden], cot: dict[str, ContratoOpcion]) -> tup
 
 
 def _id_cliente(prefijo: str, tid: str, intento: int) -> str:
-    sello = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
-    return f"{prefijo}-{tid}-{sello}-{intento}"[:48]
+    """Id único para cada envío: hora, intento y un sufijo al azar van primero.
+
+    Si hay que cortar, se corta el id del trade (que es solo para leerlo), nunca
+    la parte que hace único al id: Alpaca rechaza un client_order_id repetido.
+    """
+    sello = datetime.now(timezone.utc).strftime("%m%d%H%M%S")
+    return f"{prefijo}{sello}-{intento}-{uuid.uuid4().hex[:6]}-{tid}"[:48]
 
 
 def _negociar(
@@ -135,12 +141,55 @@ def decision_pendiente(hoy: date, decisiones: list[dict], trades: list[TradeRegi
     return None
 
 
-def patas_de(decision: dict) -> list[PataOrden]:
-    venc = date.fromisoformat(decision["vencimiento"])
+def patas_de(trade: dict) -> list[PataOrden]:
+    venc = date.fromisoformat(trade["vencimiento"])
     return [
-        PataOrden(simbolo_occ(decision["subyacente"], venc, p["tipo"], p["strike"]), p["lado"])
-        for p in decision["patas"]
+        PataOrden(simbolo_occ(trade["subyacente"], venc, p["tipo"], p["strike"]), p["lado"])
+        for p in trade["patas"]
     ]
+
+
+def _coincide_con_id(tid: str, subyacente: str, vencimiento: str, patas: list[dict]) -> bool:
+    """El id de un candidato es SUBYACENTE-estructura-VENCIMIENTO-strikes vendidos (P689-C748)."""
+    marca = f"-{vencimiento}-"
+    if not tid.startswith(f"{subyacente}-") or marca not in tid:
+        return False
+    en_id = set(tid.split(marca, 1)[1].split("-"))
+    vendidos = {f"{p['tipo'][0].upper()}{float(p['strike']):g}" for p in patas if p.get("lado") == "venta"}
+    return bool(vendidos) and en_id == vendidos
+
+
+def trade_aprobado(decision: dict) -> tuple[Optional[dict], str]:
+    """Subyacente, vencimiento, patas y pérdida máxima del candidato que aprobó el jefe.
+
+    El jefe puede aprobar un candidato distinto del que debatió el consejo: las
+    patas se toman de `orden_final` (el ciclo guarda ahí las del candidato
+    aprobado). Las del nivel de arriba son las del debatido y solo se usan si
+    el jefe aprobó ese mismo. En cualquier caso las patas tienen que coincidir
+    con el id aprobado; si no, devuelve None y el motivo, y no se envía nada.
+    """
+    orden = decision.get("orden_final") or {}
+    tid = str(orden.get("id") or "")
+    subyacente = decision.get("subyacente")
+    if orden.get("patas") and orden.get("vencimiento"):
+        fuente = orden
+    elif decision.get("trade_debatido") not in (None, tid):
+        return None, f"El jefe aprobó {tid} pero la decisión solo tiene las patas de {decision['trade_debatido']}."
+    else:
+        fuente = decision
+    trade = {
+        "id": tid,
+        "subyacente": subyacente,
+        "vencimiento": fuente.get("vencimiento"),
+        "patas": fuente.get("patas") or [],
+        "perdida_maxima": fuente.get("perdida_maxima"),
+    }
+    if not (subyacente and trade["vencimiento"] and trade["patas"]):
+        return None, f"Faltan el vencimiento o las patas de {tid}."
+    if not _coincide_con_id(tid, subyacente, trade["vencimiento"], trade["patas"]):
+        strikes = ", ".join(f"{p.get('lado')} {p.get('tipo')} {p.get('strike')}" for p in trade["patas"])
+        return None, f"Las patas ({trade['vencimiento']}: {strikes}) no coinciden con el id aprobado {tid}."
+    return trade, ""
 
 
 def abrir(
@@ -167,18 +216,25 @@ def abrir(
     freno = evaluar_freno(hoy, cuenta, broker.historial_patrimonio(hoy - timedelta(days=45)), broker.posiciones(), trades)
     check("Freno por drawdown en PERMITIDO", freno.permite, freno.estado)
 
-    patas = patas_de(decision)
+    trade, problema = trade_aprobado(decision)
+    if trade is None:
+        # Sin poder identificar sin ambigüedad el candidato aprobado no se envía nada.
+        check("Patas del candidato aprobado por el jefe", False, problema)
+        r.motivo = "No se envía: " + problema
+        return _cerrar_registro(r, registrar and enviar)
+    check("Patas del candidato aprobado por el jefe", True, f"{trade['vencimiento']}")
+    patas = patas_de(trade)
     cot = broker.cotizaciones([p.simbolo for p in patas])
     cotizadas = all(p.simbolo in cot and cot[p.simbolo].bid is not None and cot[p.simbolo].ask for p in patas)
     check("Símbolos con cotización", cotizadas, ", ".join(p.simbolo for p in patas))
     vendidas = [p for p in patas if p.lado == "venta"]
     protegidas = all(
-        any(q.lado == "compra" and q.simbolo[len(decision["subyacente"]) + 6] == v.simbolo[len(decision["subyacente"]) + 6] for q in patas)
+        any(q.lado == "compra" and q.simbolo[len(trade["subyacente"]) + 6] == v.simbolo[len(trade["subyacente"]) + 6] for q in patas)
         for v in vendidas
     )
     check("Cada pata vendida tiene su protección", bool(vendidas) and protegidas)
     check("Contratos >= 1", r.contratos >= 1, str(r.contratos))
-    perdida = (decision.get("perdida_maxima") or 0) * r.contratos
+    perdida = (trade.get("perdida_maxima") or 0) * r.contratos
     check(
         "Pérdida máxima dentro del 2% y del poder de compra",
         0 < perdida <= config.PERDIDA_MAX_TRADE * cuenta.patrimonio and perdida <= (cuenta.poder_de_compra_opciones or cuenta.poder_de_compra),
@@ -214,16 +270,16 @@ def abrir(
         return _cerrar_registro(r, registrar)
     r.ejecutado = True
     r.precio = abs(lleno.precio_promedio if lleno.precio_promedio is not None else lleno.limite)
-    ancho = max(abs(a["strike"] - b["strike"]) for a in decision["patas"] for b in decision["patas"] if a["tipo"] == b["tipo"])
+    ancho = max(abs(a["strike"] - b["strike"]) for a in trade["patas"] for b in trade["patas"] if a["tipo"] == b["tipo"])
     if registrar:
         registrar_trade(
             {
                 "id": tid,
                 "estado": "abierto",
-                "subyacente": decision["subyacente"],
+                "subyacente": trade["subyacente"],
                 "simbolos": [p.simbolo for p in patas],
                 "patas": [{"simbolo": p.simbolo, "lado": p.lado} for p in patas],
-                "vencimiento": decision["vencimiento"],
+                "vencimiento": trade["vencimiento"],
                 "abierto_el": hoy.isoformat(),
                 "contratos": r.contratos,
                 "credito": r.precio,

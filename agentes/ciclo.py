@@ -35,6 +35,8 @@ class ResultadoCiclo:
     con_modelo: bool
     vueltas: list[Vuelta] = field(default_factory=list)
     costo_usd: float = 0.0
+    # Costo y tokens de cada llamado al modelo, para ver qué agente gasta más.
+    gastos: list[dict] = field(default_factory=list)
 
     @property
     def final(self) -> Vuelta:
@@ -56,6 +58,7 @@ class ResultadoCiclo:
                 for v in self.vueltas
             ],
             "costo_usd": round(self.costo_usd, 4),
+            "gastos": self.gastos,
         }
 
 
@@ -85,6 +88,7 @@ def registro_bitacora(ciclo: ResultadoCiclo) -> dict:
         "tesis_strategy": (r.strategy or {}).get("tesis"),
         "confianza_strategy": (r.strategy or {}).get("confianza"),
         "costo_usd": round(ciclo.costo_usd, 4),
+        "gastos": ciclo.gastos,
     }
     if v.debate is not None:
         c = v.debate.trade["candidato"]
@@ -108,7 +112,21 @@ def registro_bitacora(ciclo: ResultadoCiclo) -> dict:
     else:
         registro["sin_trade"] = r.motivo_no_trade
     if v.decision.get("orden_final"):
-        registro["orden_final"] = v.decision["orden_final"]
+        orden = dict(v.decision["orden_final"])
+        # El jefe puede aprobar otro candidato que el debatido: la orden lleva las
+        # patas del aprobado, que son las que se envían (agentes/ejecucion.py).
+        aprobado = next((x["candidato"] for x in r.candidatos if x["candidato"]["id"] == orden.get("id")), None)
+        if aprobado is not None:
+            orden.update(
+                {
+                    "estructura": aprobado["estructura"],
+                    "vencimiento": aprobado["vencimiento"],
+                    "patas": [{"tipo": p["tipo"], "lado": p["lado"], "strike": p["strike"]} for p in aprobado["patas"]],
+                    "credito": aprobado["credito"],
+                    "perdida_maxima": aprobado["perdida_maxima"],
+                }
+            )
+        registro["orden_final"] = orden
         registro["plan_salida"] = v.decision.get("plan_salida")
     return registro
 
@@ -140,6 +158,8 @@ async def correr_ciclo(
     costo: list[float] = []
     ajustes: Optional[list[str]] = None
     previo: Optional[ResultadoResearch] = None
+    gastos = getattr(modelo, "gastos", None)
+    desde = len(gastos) if gastos is not None else 0
 
     for numero in range(1, MAX_VUELTAS + 1):
         r = await research.correr(informe=informe, trades=trades, ajustes=ajustes, previo=previo)
@@ -155,6 +175,8 @@ async def correr_ciclo(
         ajustes, previo = decision.get("cambios_pedidos") or [], r
 
     ciclo.costo_usd = research.costo + sum(costo)
+    if gastos is not None:
+        ciclo.gastos = gastos[desde:]
     if guardar_en_bitacora:
         registrar_decision(registro_bitacora(ciclo))
     return ciclo
