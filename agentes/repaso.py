@@ -26,6 +26,8 @@ from typing import Optional
 from agentes import config
 from agentes.backtest import correr_backtest
 from agentes.bitacora import TradeRegistrado, leer_decisiones, leer_trades
+from agentes.comparacion_eventos import comparar as comparar_regla_eventos
+from agentes.comparacion_eventos import escribir as escribir_regla_eventos
 from agentes.consejo import MIEMBROS, NOMBRES
 from agentes.modelo import Modelo, Pedido, cargar_skill, lecciones_aprobadas
 from broker.base import Broker
@@ -51,6 +53,8 @@ class Repaso:
     errores: list[dict] = field(default_factory=list)
     rechazados: list[dict] = field(default_factory=list)
     fichas: dict[str, dict] = field(default_factory=dict)
+    # Comparación de la regla de eventos nueva contra la vieja (27 oct 2026).
+    regla_eventos: dict = field(default_factory=dict)
     lecciones: Optional[dict] = None
     pruebas: list[dict] = field(default_factory=list)
     avisos: list[str] = field(default_factory=list)
@@ -321,6 +325,13 @@ async def repasar(
     # Paso 2.
     r.fichas = fichas(decisiones, resultados)
 
+    # Regla de eventos: cómo viene la nueva contra la vieja, y el archivo aparte.
+    r.regla_eventos = comparar_regla_eventos(decisiones, trades)
+    try:
+        escribir_regla_eventos(c=r.regla_eventos)
+    except OSError as e:
+        r.avisos.append(f"No se pudo escribir bitacora/regla-eventos.md: {e}")
+
     # Pasos 3 y 4.
     if modelo is None:
         r.avisos.append("Sin modelo: no se proponen lecciones.")
@@ -378,6 +389,30 @@ def _usd(v) -> str:
     return "-" if v is None else f"{v:,.2f} USD"
 
 
+def _texto_regla_eventos(c: dict) -> list[str]:
+    """Recordatorio del cambio de regla y cómo viene cada una."""
+    if not c:
+        return ["Sin datos."]
+    from agentes.comparacion_eventos import NOMBRES
+
+    l = [
+        f"Desde el {c['desde_que_rige']} un evento ya no descarta el trade: se mide cuánto se movió el activo en "
+        f"los eventos parecidos del pasado y se compara con la distancia al strike vendido (modo "
+        f"{c['modo_vigente']}, percentil {c['percentil_colchon']:g}). Detalle en bitacora/regla-eventos.md.",
+    ]
+    for modo, g in c["grupos"].items():
+        if not g["ciclos"]:
+            continue
+        l.append(
+            f"- {NOMBRES[modo]}: {g['ciclos']} ciclos, {g['aprobados']} aprobados, "
+            f"{g['frenados_por_evento']} frenados por un evento, {g['cerrados']} cerrados con "
+            f"{g['resultado_usd']:+,.2f} USD"
+            + (f" (peor {g['peor_trade_usd']:+,.2f})" if g["peor_trade_usd"] is not None else "")
+            + "."
+        )
+    return l
+
+
 def formatear_repaso(r: Repaso) -> str:
     l = [f"# Repaso semanal · {r.desde.isoformat()} al {r.hasta.isoformat()}", ""]
     l.append("## Resultado")
@@ -418,6 +453,8 @@ def formatear_repaso(r: Repaso) -> str:
             l.append(f"- {d['fecha']}: {d['decision']} ({sobre}). {d.get('razon') or d.get('sin_trade') or ''}".rstrip())
     else:
         l.append("No hubo ciclos esta semana.")
+    l += ["", "## Regla de eventos (cambiada el 27 oct 2026)"]
+    l += _texto_regla_eventos(r.regla_eventos)
     l += ["", "## 1. Errores"]
     if r.errores:
         for e in r.errores:

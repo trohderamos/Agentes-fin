@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Guarda la bitácora (bitacora/*.jsonl y datos/repasos/) fuera de la copia local,
-# para que la rutina diaria, que corre cada vez en una máquina nueva, no la pierda.
+# Guarda la bitácora (bitacora/*.jsonl, bitacora/regla-eventos.md y datos/repasos/)
+# fuera de la copia local, para que la rutina diaria, que corre cada vez en una
+# máquina nueva, no la pierda.
 #
 #   scripts/bitacora.sh bajar   # trae la bitácora guardada a la copia local
 #   scripts/bitacora.sh subir   # guarda la bitácora local
@@ -25,7 +26,7 @@ bajar_carpeta() {
     return 0
   fi
   shopt -s nullglob
-  for f in "$CARPETA"/bitacora/*.jsonl "$CARPETA"/datos/repasos/*; do
+  for f in "$CARPETA"/bitacora/*.jsonl "$CARPETA"/bitacora/regla-eventos.md "$CARPETA"/datos/repasos/*; do
     local rel="${f#"$CARPETA"/}"
     mkdir -p "$(dirname "$rel")"
     cp "$f" "$rel"
@@ -35,7 +36,7 @@ bajar_carpeta() {
 
 subir_carpeta() {
   shopt -s nullglob
-  for f in bitacora/*.jsonl datos/repasos/*; do
+  for f in bitacora/*.jsonl bitacora/regla-eventos.md datos/repasos/*; do
     mkdir -p "$CARPETA/$(dirname "$f")"
     cp "$f" "$CARPETA/$f"
   done
@@ -51,7 +52,7 @@ bajar_rama() {
   archivos="$(git ls-tree -r --name-only FETCH_HEAD)"
   for f in $archivos; do
     case "$f" in
-      bitacora/*.jsonl|datos/repasos/*)
+      bitacora/*.jsonl|bitacora/regla-eventos.md|datos/repasos/*)
         mkdir -p "$(dirname "$f")"
         git show "FETCH_HEAD:$f" > "$f"
         echo "bajado $f";;
@@ -71,7 +72,7 @@ subir_rama() {
     find "$tmp" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
   fi
   shopt -s nullglob
-  for f in bitacora/*.jsonl datos/repasos/*; do
+  for f in bitacora/*.jsonl bitacora/regla-eventos.md datos/repasos/*; do
     mkdir -p "$tmp/$(dirname "$f")"
     cp "$f" "$tmp/$f"
   done

@@ -305,6 +305,10 @@ def abrir(
                 "gamma": round(sum((-1 if p.lado == "venta" else 1) * (cot[p.simbolo].gamma or 0) for p in patas) * 100 * r.contratos, 4),
                 "vega": round(sum((-1 if p.lado == "venta" else 1) * (cot[p.simbolo].vega or 0) for p in patas) * 100 * r.contratos, 4),
                 "plan_salida": decision.get("plan_salida"),
+                # Con qué regla de eventos se tomó este trade, para compararlas
+                # después (el usuario cambió la regla el 27 oct 2026).
+                "regla_eventos": decision.get("regla_eventos"),
+                "colchon_eventos": decision.get("colchon_eventos"),
             }
         )
     return _cerrar_registro(r, registrar)

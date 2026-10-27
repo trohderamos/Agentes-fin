@@ -63,6 +63,16 @@ Alpaca no da IV histórica, así que se reconstruye: para cada día hábil del �
 
 `datos/eventos.csv` tiene las fechas de la Fed, el CPI y el informe de empleo, tomadas de los calendarios oficiales. Hay que agregar las nuevas a medida que se publican; si el archivo no cubre los próximos 21 días, el informe lo avisa.
 
+`datos/eventos_historicos.csv` tiene las fechas pasadas de esos mismos eventos desde 2018 (calendario y archivo del FOMC; fechas de publicación de PAYEMS y CPIAUCSL en ALFRED). Con las barras diarias del bróker, `datos/reaccion_eventos.py` mide cuánto se movió cada activo esos días.
+
+## Regla de eventos (cambiada el 27 oct 2026)
+
+Antes, cualquier evento dentro del plazo descartaba el trade. Ahora el evento se opera: News arma su tesis (qué pasó la vez anterior, qué espera el mercado, su pronóstico) y en código se compara el movimiento típico de los eventos del plazo con la distancia del precio al strike vendido (`agentes/eventos.py`). El candidato se descarta solo si el strike queda más cerca que ese movimiento.
+
+Se ajusta en `agentes/config.py`: `MODO_EVENTOS` (`operar` o `vetar`), `PERCENTIL_COLCHON` (50 por defecto; 75 o 90 son más conservadores) y `FACTOR_CONTRATOS_EVENTO` (el tamaño se recorta con un macro en el plazo).
+
+`python orquestador.py regla-eventos` muestra el movimiento histórico medido y compara los trades que dejó tomar cada regla; también se escribe en `bitacora/regla-eventos.md` y entra en el repaso de los viernes.
+
 ## Seguridad
 
 - El adaptador apunta siempre a `paper-api.alpaca.markets`; la URL no se puede cambiar a la de cuentas reales.

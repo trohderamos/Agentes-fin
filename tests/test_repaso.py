@@ -188,8 +188,16 @@ class TestLecciones(unittest.TestCase):
                 ruta.write_text("# Lecciones\n\n- 2026-10-23: no vender calls con tendencia alcista fuerte.\n", encoding="utf-8")
                 self.assertIn("no vender calls", modulo_modelo.lecciones_aprobadas())
 
-    def test_el_repo_no_trae_lecciones_todavia(self):
-        self.assertEqual(modulo_modelo.lecciones_aprobadas(), "")
+    def test_las_lecciones_del_repo_llegan_a_los_agentes(self):
+        # Desde el 27 oct 2026 el repo trae las tres lecciones aprobadas del
+        # repaso del 23 (PR #6): si hay alguna, tiene que llegar al prompt.
+        texto = modulo_modelo.lecciones_aprobadas()
+        if modulo_modelo.ARCHIVO_LECCIONES.exists() and any(
+            l.strip().startswith("-") for l in modulo_modelo.ARCHIVO_LECCIONES.read_text(encoding="utf-8").splitlines()
+        ):
+            self.assertIn("Lecciones aprobadas", texto)
+        else:
+            self.assertEqual(texto, "")
 
 
 if __name__ == "__main__":

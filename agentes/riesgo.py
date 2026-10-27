@@ -14,6 +14,7 @@ from agentes import config
 from agentes.bitacora import TradeRegistrado
 from agentes.estructuras import Candidato
 from agentes.freno import ResultadoFreno
+from agentes.eventos import calcular_colchon, distancia_al_strike_pct, eventos_del_plazo
 from datos.eventos import Evento
 
 
@@ -28,6 +29,9 @@ class Revision:
     riesgo_abierto_pct: float = 0.0
     perdida_estres_pct: float = 0.0  # con delta y gamma, movimiento de 3% en contra
     vega_punto_pct: float = 0.0
+    # Eventos del plazo medidos como movimiento (modo "operar"): ver agentes/eventos.py.
+    colchon: Optional[dict] = None
+    contratos_max_sin_evento: Optional[int] = None
 
     def a_dict(self) -> dict:
         return asdict(self)
@@ -50,6 +54,8 @@ def revisar(
     abiertos: list[TradeRegistrado],
     eventos: list[Evento],
     eventos_news: Optional[list[dict]] = None,
+    reacciones: Optional[dict] = None,
+    es_etf: bool = True,
 ) -> Revision:
     """Revisa un candidato de 1 contrato contra todos los límites."""
     r = Revision(id=c.id, vetado=False)
@@ -79,6 +85,84 @@ def revisar(
         veto("Hay una pata vendida sin protección: riesgo ilimitado.")
 
     # Eventos dentro del plazo.
+    if config.MODO_EVENTOS == "operar":
+        _revisar_eventos_como_insumo(r, c, hoy, precio, eventos, eventos_news, reacciones, es_etf, veto)
+    else:
+        _revisar_eventos_como_veto(r, c, hoy, eventos, eventos_news, veto)
+    for e in eventos_en_plazo(eventos, hoy, c.vencimiento):
+        if e.tipo == "dividendo" and any(p.tipo == "call" for p in c.vendidos):
+            r.alertas.append(f"Ex-dividendo el {e.fecha.isoformat()} con una call vendida: riesgo de asignación anticipada.")
+
+    # Tamaño y riesgo.
+    r.riesgo_pct = c.perdida_maxima / capital
+    r.contratos_max = int(config.PERDIDA_MAX_TRADE * capital // c.perdida_maxima) if c.perdida_maxima > 0 else 0
+    # Con un evento macro dentro del plazo, el tope de contratos se recorta: la
+    # peor pérdida de un día de evento es mucho peor que la de un día normal.
+    if (r.colchon or {}).get("hay_macro") and config.FACTOR_CONTRATOS_EVENTO < 1:
+        r.contratos_max_sin_evento = r.contratos_max
+        r.contratos_max = max(1, int(r.contratos_max * config.FACTOR_CONTRATOS_EVENTO))
+        if r.contratos_max < r.contratos_max_sin_evento:
+            r.alertas.append(
+                f"Tope de contratos recortado de {r.contratos_max_sin_evento} a {r.contratos_max} por el evento macro "
+                f"dentro del plazo (factor {config.FACTOR_CONTRATOS_EVENTO:g})."
+            )
+    if r.contratos_max < 1:
+        veto(f"Un contrato arriesga {r.riesgo_pct:.2%} del capital (límite {config.PERDIDA_MAX_TRADE:.0%} por trade).")
+    _revisar_resto(r, c, capital, precio, abiertos, veto)
+    return r
+
+
+def _revisar_eventos_como_insumo(
+    r: Revision,
+    c: Candidato,
+    hoy: date,
+    precio: float,
+    eventos: list[Evento],
+    eventos_news: Optional[list[dict]],
+    reacciones: Optional[dict],
+    es_etf: bool,
+    veto,
+) -> None:
+    """Regla nueva (27 oct 2026): el evento se mide, no se veta por existir."""
+    plazo = eventos_del_plazo(eventos, eventos_news, hoy, c.vencimiento, c.subyacente)
+    col = calcular_colchon(
+        c.subyacente,
+        plazo,
+        reacciones or {},
+        distancia_strike_pct=distancia_al_strike_pct(c, precio),
+        es_etf=es_etf,
+    )
+    r.colchon = col.a_dict()
+    if col.earnings_propio and config.EARNINGS_PROPIO_VETA:
+        veto(
+            f"Balance de {col.earnings_propio} (el propio subyacente) dentro del plazo: un earnings mueve a la "
+            "acción mucho más que cualquier macro y el gap no se puede gestionar."
+        )
+    if not col.aportes:
+        return
+    detalle = ", ".join(f"{a['fecha']} {a['evento']} ({a['aporte_pct']}%)" for a in col.aportes if a.get("aporte_pct"))
+    if col.alcanza is False:
+        veto(
+            f"Los eventos del plazo mueven típicamente {col.colchon_pct:.2f}% (percentil {col.percentil:g} histórico) "
+            f"y el strike vendido está a {col.distancia_strike_pct:.2f}%: {detalle}."
+        )
+    elif col.distancia_strike_pct is not None:
+        r.alertas.append(
+            f"Eventos en el plazo: movimiento típico {col.colchon_pct:.2f}% contra {col.distancia_strike_pct:.2f}% "
+            f"de distancia al strike ({col.sobra_pct:+.2f} puntos de sobra); en un mal día (percentil "
+            f"{config.PERCENTIL_COLCHON_ESTRES:g}) serían {col.colchon_estres_pct:.2f}%. {detalle}."
+        )
+
+
+def _revisar_eventos_como_veto(
+    r: Revision,
+    c: Candidato,
+    hoy: date,
+    eventos: list[Evento],
+    eventos_news: Optional[list[dict]],
+    veto,
+) -> None:
+    """Regla vieja: cualquier evento grande dentro del plazo descarta el trade."""
     descartan = config.eventos_descartan(hoy)
     for e in eventos_que_descartan(eventos, hoy, c.vencimiento):
         if descartan:
@@ -97,16 +181,17 @@ def revisar(
                 )
             else:
                 veto(f"News marcó un evento de impacto alto dentro del plazo: {fecha.isoformat()} {e.get('evento')}.")
-    for e in eventos_en_plazo(eventos, hoy, c.vencimiento):
-        if e.tipo == "dividendo" and any(p.tipo == "call" for p in c.vendidos):
-            r.alertas.append(f"Ex-dividendo el {e.fecha.isoformat()} con una call vendida: riesgo de asignación anticipada.")
 
-    # Tamaño y riesgo.
-    r.riesgo_pct = c.perdida_maxima / capital
-    r.contratos_max = int(config.PERDIDA_MAX_TRADE * capital // c.perdida_maxima) if c.perdida_maxima > 0 else 0
-    if r.contratos_max < 1:
-        veto(f"Un contrato arriesga {r.riesgo_pct:.2%} del capital (límite {config.PERDIDA_MAX_TRADE:.0%} por trade).")
 
+def _revisar_resto(
+    r: Revision,
+    c: Candidato,
+    capital: float,
+    precio: float,
+    abiertos: list[TradeRegistrado],
+    veto,
+) -> None:
+    """Riesgo abierto, griegas del portafolio y liquidez."""
     abierto = sum(t.perdida_maxima for t in abiertos if t.estado == "abierto")
     r.riesgo_abierto_pct = (abierto + c.perdida_maxima) / capital
     if r.riesgo_abierto_pct > config.RIESGO_TOTAL_MAX:
@@ -144,4 +229,3 @@ def revisar(
         )
     if c.fuera_movimiento_esperado is False:
         r.alertas.append("Algún strike vendido queda dentro del movimiento esperado hasta el vencimiento.")
-    return r

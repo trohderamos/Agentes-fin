@@ -33,6 +33,7 @@ from broker.base import Barra, Broker, Noticia
 from datos.cadena import cadena_en_ventana, hoy_nueva_york
 from datos.eventos import Evento, cargar_eventos
 from datos.informe import Informe, generar_informe
+from datos.reaccion_eventos import reacciones as reacciones_historicas
 
 # Para ETFs, las empresas de mayor peso cuyos earnings mira News.
 MAYORES_DEL_INDICE = {
@@ -59,6 +60,9 @@ class ResultadoResearch:
     descartados: dict[str, list[str]] = field(default_factory=dict)  # id -> motivos
     candidatos: list[dict] = field(default_factory=list)  # los que pasan a consejo
     backtests: dict[str, dict] = field(default_factory=dict)
+    # Cuánto se movió el activo en los Fed, CPI y empleo del pasado (regla de
+    # eventos nueva, 27 oct 2026): es el insumo que reemplaza al veto.
+    reaccion_historica: dict = field(default_factory=dict)
     no_hay_trade: bool = False
     motivo_no_trade: str = ""
     costo_usd: float = 0.0
@@ -80,6 +84,7 @@ class ResultadoResearch:
             "candidatos": self.candidatos,
             "descartados": self.descartados,
             "backtests": self.backtests,
+            "reaccion_historica": self.reaccion_historica,
             "no_hay_trade": self.no_hay_trade,
             "motivo_no_trade": self.motivo_no_trade,
             "costo_usd": round(self.costo_usd, 4),
@@ -172,7 +177,15 @@ En 'eventos' poné impacto "alto" a: earnings del activo, decisión de la Fed, C
 los earnings de esas empresas de mayor peso. En 'tipo' poné "earnings" a los balances de empresas,
 "macro" a Fed, CPI, PCE y empleo, y "otro" al resto. Todo evento de impacto alto descarta los
 vencimientos que lo incluyan, salvo cuando la regla del usuario dice que los eventos no descartan.
-Marcá estimada la fecha que la empresa no confirmó. Separá hechos de rumores."""
+Marcá estimada la fecha que la empresa no confirmó. Separá hechos de rumores.
+Además, por cada evento de impacto alto dentro de la ventana armá su tesis en 'vista_eventos': qué pasó
+la vez anterior (el dato del mes pasado y cómo reaccionó el mercado ese día), qué espera el mercado ahora
+(consenso, probabilidades implícitas de la Fed, lo que digan los analistas, con fuente), tu propio
+pronóstico y de qué lado ves el riesgo. En 'movimiento_esperado_pct' poné cuánto pensás que puede moverse
+el activo ese día, en porcentaje; en 'reaccion_historica' te paso cuánto se movió de verdad en los
+eventos parecidos del pasado (mediana, percentil 90 y peor día), así podés comparar.
+Ya no vetás por calendario: un evento no descarta el trade. Usá 'veto_duro' solo para algo que los
+números no ven (un fallo judicial, una suspensión de cotización, un dato que cambia la empresa)."""
 
 TAREA_FUNDAMENTALS = """Evaluá los fundamentals del activo (o del índice, si es un ETF) con búsqueda web:
 valuación contra su historia, crecimiento y revisiones de estimaciones, y riesgos que puedan provocar un
@@ -231,10 +244,50 @@ ESQUEMA_NEWS = esquema_informe(
                 "additionalProperties": False,
             },
         },
+        "vista_eventos": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "evento": {"type": "string"},
+                    "fecha": {"type": "string", "description": "AAAA-MM-DD"},
+                    "la_vez_anterior": {"type": "string", "description": "el dato del mes pasado y qué hizo el mercado ese día"},
+                    "que_espera_el_mercado": {"type": "string"},
+                    "pronostico_propio": {"type": "string"},
+                    "movimiento_esperado_pct": {"type": "number"},
+                    "lado_del_riesgo": {"type": "string", "enum": ["baja", "suba", "los dos", "no se sabe"]},
+                    "fuentes": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": [
+                    "evento",
+                    "fecha",
+                    "la_vez_anterior",
+                    "que_espera_el_mercado",
+                    "pronostico_propio",
+                    "movimiento_esperado_pct",
+                    "lado_del_riesgo",
+                    "fuentes",
+                ],
+                "additionalProperties": False,
+            },
+        },
         "veredicto": {"type": "string", "enum": ["SIN EVENTOS", "ALERTA", "DESCARTAR"]},
         "motivo_veredicto": {"type": "string"},
+        "veto_duro": {"type": "boolean", "description": "solo para algo que los números no ven"},
+        "motivo_veto_duro": {"type": "string"},
     },
-    ["sentimiento", "por_que_se_mueve", "hechos", "rumores", "eventos", "veredicto", "motivo_veredicto"],
+    [
+        "sentimiento",
+        "por_que_se_mueve",
+        "hechos",
+        "rumores",
+        "eventos",
+        "vista_eventos",
+        "veredicto",
+        "motivo_veredicto",
+        "veto_duro",
+        "motivo_veto_duro",
+    ],
 )
 
 ESQUEMA_FUNDAMENTALS = esquema_informe(
@@ -371,10 +424,13 @@ def _news_sin_modelo(eventos: list[Evento]) -> dict:
             }
             for e in eventos
         ],
+        "vista_eventos": [],
         "veredicto": "ALERTA" if grandes else "SIN EVENTOS",
         "motivo_veredicto": "Hay eventos grandes en la ventana."
         if grandes
         else "",
+        "veto_duro": False,
+        "motivo_veto_duro": "",
         "sin_modelo": True,
     }
 
@@ -465,6 +521,13 @@ class Research:
         soportes, resistencias = niveles(barras, precio)
         ultimo_venc = hoy + timedelta(days=config.DIAS_MAX)
         eventos = [e for e in cargar_eventos() if hoy <= e.fecha <= ultimo_venc]
+        # Cuánto se movió este activo en los eventos macro del pasado: el insumo
+        # que reemplazó al veto por calendario (regla del 27 oct 2026).
+        try:
+            r.reaccion_historica = reacciones_historicas(barras, hasta=hoy)
+        except Exception as e:  # nunca frena el research
+            r.reaccion_historica = {}
+            r.avisos.append(f"No se pudo medir la reacción histórica a los eventos: {e}")
         try:
             noticias = self.broker.noticias([self.subyacente], hoy - timedelta(days=3), 30)
         except Exception as e:  # las noticias no frenan el research
@@ -508,6 +571,7 @@ class Research:
                         "vencimientos": [v["fecha"] for v in informe_dict["vencimientos"]],
                         "empresas_de_mayor_peso": MAYORES_DEL_INDICE.get(self.subyacente, []),
                         "eventos_cargados": [_evento(e) for e in eventos],
+                        "reaccion_historica": r.reaccion_historica,
                         "noticias_benzinga": [_noticia(n) for n in noticias],
                         "revisiones_previas_de_hoy": notas_de_hoy(self.subyacente, hoy),
                     }
@@ -547,9 +611,20 @@ class Research:
         }
         todos = armar_candidatos(self.subyacente, vencimientos, precio, movimientos)
         eventos_news = (r.news or {}).get("eventos", [])
+        es_etf = self.subyacente in MAYORES_DEL_INDICE
         revisiones = {
-            c.id: revisar(c, hoy, cuenta.patrimonio, precio, freno, abiertos, eventos, eventos_news) for c in todos
+            c.id: revisar(
+                c, hoy, cuenta.patrimonio, precio, freno, abiertos, eventos, eventos_news, r.reaccion_historica, es_etf
+            )
+            for c in todos
         }
+        if (r.news or {}).get("veto_duro"):
+            r.no_hay_trade = True
+            r.motivo_no_trade = "News vetó el activo por algo que los números no ven: " + str(
+                (r.news or {}).get("motivo_veto_duro") or ""
+            )
+            r.costo_usd = self.costo
+            return r
         validos = [c for c in todos if not revisiones[c.id].vetado]
         r.descartados = {c.id: revisiones[c.id].vetos for c in todos if revisiones[c.id].vetado}
         if not todos:
@@ -598,6 +673,8 @@ class Research:
                             "candidatos": [resumen_candidato(c.a_dict()) for c in validos],
                             "descartados_por_limites": r.descartados,
                             "backtest_aproximado": r.backtests,
+                            "reaccion_historica": r.reaccion_historica,
+                            "vista_eventos": (r.news or {}).get("vista_eventos", []),
                             "ajustes_pedidos_por_el_jefe": ajustes or [],
                         }
                     ),
@@ -619,7 +696,10 @@ class Research:
 
         # Risk: primero los límites en código (otra vez, por las dudas), después el agente.
         revision_final: dict[str, Revision] = {
-            c.id: revisar(c, hoy, cuenta.patrimonio, precio, freno, abiertos, eventos, eventos_news) for c, _ in elegidos
+            c.id: revisar(
+                c, hoy, cuenta.patrimonio, precio, freno, abiertos, eventos, eventos_news, r.reaccion_historica, es_etf
+            )
+            for c, _ in elegidos
         }
         if self.modelo is None:
             r.risk = {
@@ -640,6 +720,8 @@ class Research:
                             "freno_drawdown": freno.a_dict(),
                             "trades_abiertos": [t.__dict__ for t in abiertos],
                             "eventos_news": eventos_news,
+                            "reaccion_historica": r.reaccion_historica,
+                            "vista_eventos": (r.news or {}).get("vista_eventos", []),
                             "elegidos": [
                                 {"candidato": c.a_dict(), "motivo_strategy": e, "revision_codigo": revision_final[c.id].a_dict()}
                                 for c, e in elegidos
