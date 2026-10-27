@@ -65,6 +65,17 @@ ACTIVOS_24_7 = ("IBIT", "ETHA")
 # Ancho de las alas de los spreads, en dólares por cada 100 de precio del
 # subyacente (con SPY a 770, 0.75 da alas de 6 dólares).
 ANCHO_CADA_100 = 0.75
+# Anchos con los que se arman candidatos. El primero es el de siempre; los
+# demás se suman con "-A<ancho>" al final del id. Lección del repaso del 23 oct
+# 2026, aprobada el 27: el jefe pidió alas de 10 dos veces y no había candidato.
+ANCHOS_CADA_100 = (ANCHO_CADA_100, 1.4)
+
+# --- Entrada (lección del repaso del 23 oct 2026, aprobada el 27) ----------
+# El piso de la orden de apertura es una fracción del crédito medio del momento,
+# no la cifra que se escribió en el debate. Se arranca al medio y se baja de a
+# 0.01 (o un poco más si no alcanza el tiempo) hasta el piso, en 15 minutos.
+FRACCION_PISO_ENTRADA = 0.85
+MINUTOS_NEGOCIAR_ENTRADA = 15
 
 # --- Risk (skill research-opciones-primas) --------------------------------
 PERDIDA_MAX_TRADE = 0.02  # del capital

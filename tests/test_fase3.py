@@ -58,7 +58,8 @@ def venc(dias):
 
 class TestEstructuras(unittest.TestCase):
     def test_candidatos_respetan_reglas(self):
-        cands = armar_candidatos("SPY", [venc(9), venc(30)], 600.0, {HOY + timedelta(days=9): 10.0})
+        todos = armar_candidatos("SPY", [venc(9), venc(30)], 600.0, {HOY + timedelta(days=9): 10.0})
+        cands = [c for c in todos if not c.id.endswith("-A8")]
         self.assertEqual({c.estructura for c in cands}, {"spread_put", "spread_call", "iron_condor"})
         for c in cands:
             self.assertEqual(c.dias, 9)  # el de 30 días queda afuera
@@ -76,6 +77,16 @@ class TestEstructuras(unittest.TestCase):
         condor = next(c for c in cands if c.estructura == "iron_condor")
         self.assertEqual(len(condor.patas), 4)
         self.assertLess(condor.prob_ganancia, put.prob_ganancia)
+
+    def test_tambien_alas_anchas(self):
+        # Lección aprobada el 27 oct 2026: también alas de 1.4 cada 100 (8 con SPY a 600).
+        cands = armar_candidatos("SPY", [venc(9)], 600.0)
+        anchos = [c for c in cands if c.id.endswith("-A8")]
+        self.assertEqual({c.estructura for c in anchos}, {"spread_put", "spread_call", "iron_condor"})
+        for c in anchos:
+            self.assertGreater(c.ancho, 4.0)
+            self.assertEqual(c.clave_backtest, f"{c.estructura} alas 8")
+        self.assertEqual(len({c.id for c in cands}), len(cands))
 
     def test_sin_cotizacion_no_hay_candidato(self):
         v = venc(9)

@@ -25,7 +25,7 @@ from typing import Any, Optional
 from agentes import config
 from agentes.backtest import ResultadoBacktest, correr_backtest
 from agentes.bitacora import TradeRegistrado, leer_trades
-from agentes.estructuras import Candidato, ancho_objetivo, armar_candidatos, resumen_candidato
+from agentes.estructuras import Candidato, anchos_objetivo, armar_candidatos, clave_backtest, resumen_candidato
 from agentes.freno import ResultadoFreno, evaluar_freno
 from agentes.modelo import Modelo, Pedido, a_json, cargar_skill, esquema_informe, lecciones_aprobadas
 from agentes.riesgo import Revision, eventos_que_descartan, revisar
@@ -565,11 +565,16 @@ class Research:
             return r
 
         # Backtest aproximado de cada estructura, al plazo típico de los candidatos.
-        ancho_pct = ancho_objetivo(precio) / precio
+        # Uno por cada ancho que tenga candidatos (clave "iron_condor" o "iron_condor alas 10").
+        anchos = anchos_objetivo(precio)
         for estructura in sorted({c.estructura for c in validos}):
             dias = round(statistics.median(c.dias for c in validos if c.estructura == estructura))
-            bt = correr_backtest(barras, estructura, dias, config.DELTA_OBJETIVO, ancho_pct)
-            r.backtests[estructura] = _resumen_backtest(bt)
+            for ancho in anchos:
+                clave = clave_backtest(estructura, ancho, anchos[0])
+                if not any(c.clave_backtest == clave for c in validos):
+                    continue
+                bt = correr_backtest(barras, estructura, dias, config.DELTA_OBJETIVO, ancho / precio)
+                r.backtests[clave] = _resumen_backtest(bt)
 
         # Strategy.
         if self.modelo is None:
@@ -663,7 +668,7 @@ class Research:
                     "riesgo_principal": e.get("riesgo_principal"),
                     "revision": rev.a_dict(),
                     "comentario_risk": comentarios.get(c.id),
-                    "backtest": r.backtests.get(c.estructura),
+                    "backtest": r.backtests.get(c.clave_backtest),
                 }
             )
         if not r.candidatos:

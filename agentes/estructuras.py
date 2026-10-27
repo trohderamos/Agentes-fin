@@ -66,6 +66,9 @@ class Candidato:
     theta: float
     vega: float
     fuera_movimiento_esperado: Optional[bool]
+    # Clave de su backtest aproximado: la estructura, o la estructura con el
+    # ancho si es uno de los anchos extra (config.ANCHOS_CADA_100).
+    clave_backtest: str = ""
 
     @property
     def vendidos(self) -> list[Pata]:
@@ -155,6 +158,8 @@ def _armar(
     patas: tuple[Pata, ...],
     precio: Optional[float],
     movimiento: Optional[float],
+    sufijo_ancho: str = "",
+    clave_backtest: str = "",
 ) -> Optional[Candidato]:
     credito = sum(-p.signo * p.medio for p in patas)
     natural = sum((p.bid if p.lado == "venta" else -p.ask) for p in patas)
@@ -178,7 +183,7 @@ def _armar(
         )
     sufijo = "-".join(f"{p.tipo[0].upper()}{p.strike:g}" for p in vendidos)
     return Candidato(
-        id=f"{subyacente}-{estructura}-{venc.fecha.isoformat()}-{sufijo}",
+        id=f"{subyacente}-{estructura}-{venc.fecha.isoformat()}-{sufijo}{sufijo_ancho}",
         estructura=estructura,
         subyacente=subyacente,
         vencimiento=venc.fecha,
@@ -198,11 +203,23 @@ def _armar(
         theta=_griega(patas, "theta"),
         vega=_griega(patas, "vega"),
         fuera_movimiento_esperado=fuera,
+        clave_backtest=clave_backtest or estructura,
     )
 
 
-def ancho_objetivo(precio: float) -> float:
-    return max(1.0, round(precio * config.ANCHO_CADA_100 / 100))
+def ancho_objetivo(precio: float, cada_100: float = config.ANCHO_CADA_100) -> float:
+    return max(1.0, round(precio * cada_100 / 100))
+
+
+def anchos_objetivo(precio: Optional[float]) -> list[float]:
+    """Los anchos de alas a probar, sin repetir; el primero es el de siempre."""
+    if not precio:
+        return [5.0]
+    return list(dict.fromkeys(ancho_objetivo(precio, a) for a in config.ANCHOS_CADA_100))
+
+
+def clave_backtest(estructura: str, ancho: float, principal: float) -> str:
+    return estructura if ancho == principal else f"{estructura} alas {ancho:g}"
 
 
 def armar_candidatos(
@@ -211,33 +228,39 @@ def armar_candidatos(
     precio: Optional[float],
     movimientos: Optional[dict[date, float]] = None,
 ) -> list[Candidato]:
-    """Spread de puts, spread de calls e iron condor para cada vencimiento."""
+    """Spread de puts, spread de calls e iron condor para cada vencimiento y cada ancho."""
     movimientos = movimientos or {}
-    ancho = ancho_objetivo(precio) if precio else 5.0
+    anchos = anchos_objetivo(precio)
     candidatos: list[Candidato] = []
+    vistos: set[tuple[str, frozenset]] = set()
     for v in vencimientos:
         if not config.DIAS_MIN <= v.dias <= config.DIAS_MAX:
             continue
-        lados: dict[str, tuple[Pata, Pata]] = {}
-        for tipo in ("put", "call"):
-            vendido = _vendido(v.contratos, tipo)
-            if vendido is None:
-                continue
-            protector = _protector(v.contratos, vendido, ancho)
-            if protector is None:
-                continue
-            pv, pc = _pata(vendido, "venta"), _pata(protector, "compra")
-            if pv is None or pc is None:
-                continue
-            lados[tipo] = (pc, pv) if tipo == "put" else (pv, pc)
         mov = movimientos.get(v.fecha)
-        for tipo, estructura in (("put", "spread_put"), ("call", "spread_call")):
-            if tipo in lados:
-                c = _armar(estructura, subyacente, v, lados[tipo], precio, mov)
+        for ancho in anchos:
+            sufijo = "" if ancho == anchos[0] else f"-A{ancho:g}"
+            lados: dict[str, tuple[Pata, Pata]] = {}
+            for tipo in ("put", "call"):
+                vendido = _vendido(v.contratos, tipo)
+                if vendido is None:
+                    continue
+                protector = _protector(v.contratos, vendido, ancho)
+                if protector is None:
+                    continue
+                pv, pc = _pata(vendido, "venta"), _pata(protector, "compra")
+                if pv is None or pc is None:
+                    continue
+                lados[tipo] = (pc, pv) if tipo == "put" else (pv, pc)
+            armados = [(e, lados[t]) for t, e in (("put", "spread_put"), ("call", "spread_call")) if t in lados]
+            if "put" in lados and "call" in lados:
+                armados.append(("iron_condor", lados["put"] + lados["call"]))
+            for estructura, patas in armados:
+                # Si la cadena no tiene un strike más lejos, el ancho extra da las mismas patas.
+                marca = (estructura, frozenset(p.simbolo for p in patas))
+                if marca in vistos:
+                    continue
+                vistos.add(marca)
+                c = _armar(estructura, subyacente, v, patas, precio, mov, sufijo, clave_backtest(estructura, ancho, anchos[0]))
                 if c:
                     candidatos.append(c)
-        if "put" in lados and "call" in lados:
-            c = _armar("iron_condor", subyacente, v, lados["put"] + lados["call"], precio, mov)
-            if c:
-                candidatos.append(c)
     return candidatos
