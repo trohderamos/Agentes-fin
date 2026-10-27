@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from typing import Optional
 
+from agentes import config
 from agentes.bitacora import TradeRegistrado, registrar_decision
 from agentes.consejo import Debate, debatir
 from agentes.jefe import MAX_VUELTAS, decidir
@@ -62,6 +63,21 @@ class ResultadoCiclo:
         }
 
 
+def regla_eventos_del_ciclo(r: ResultadoResearch) -> dict:
+    """Con qué regla de eventos se decidió, y con qué números."""
+    resumen = {
+        t: {k: v.get(k) for k in ("eventos", "mediana_pct", "p75_pct", "p90_pct", "peor_pct", "peor_fecha")}
+        for t, v in (r.reaccion_historica or {}).items()
+    }
+    return {
+        "modo": config.MODO_EVENTOS,
+        "percentil_colchon": config.PERCENTIL_COLCHON,
+        "factor_contratos": config.FACTOR_CONTRATOS_EVENTO,
+        "vista_eventos": (r.news or {}).get("vista_eventos", []),
+        "reaccion_historica": resumen,
+    }
+
+
 def registro_bitacora(ciclo: ResultadoCiclo) -> dict:
     """Lo que pide el skill bitacora-trades al decidir."""
     v = ciclo.final
@@ -79,6 +95,10 @@ def registro_bitacora(ciclo: ResultadoCiclo) -> dict:
         "orden_enviada": False,  # en la fase 4 no se envían órdenes
         "freno": r.freno.estado,
         "eventos": [f"{e.get('fecha')} {e.get('evento')}" for e in (r.news or {}).get("eventos", [])],
+        # Con qué regla de eventos se decidió este ciclo (el usuario la cambió el
+        # 27 oct 2026): así el repaso puede comparar los trades de antes con los
+        # de ahora y decidir si conviene ir más agresivo o volver atrás.
+        "regla_eventos": regla_eventos_del_ciclo(r),
         "precio": r.precio,
         "tesis_chart": (r.chart or {}).get("tesis"),
         "lado_chart": (r.chart or {}).get("lado_a_vender"),
@@ -103,6 +123,7 @@ def registro_bitacora(ciclo: ResultadoCiclo) -> dict:
                 "credito": c["credito"],
                 "perdida_maxima": c["perdida_maxima"],
                 "backtest": (v.debate.trade.get("backtest") or {}).get("veredicto"),
+                "colchon_eventos": (v.debate.trade.get("revision") or {}).get("colchon"),
                 "votos": {
                     m: {"voto": p.get("voto"), "confianza": p.get("confianza"), "argumento": p.get("postura")}
                     for m, p in v.debate.rondas[-1].items()

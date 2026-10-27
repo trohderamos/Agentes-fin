@@ -9,6 +9,7 @@ Uso:
     python orquestador.py ejecutar --enviar      # la envía a la cuenta paper
     python orquestador.py gestionar [--enviar]   # revisa las posiciones abiertas y cierra según el plan
     python orquestador.py repaso                 # repaso semanal: resultado, trades, errores, fichas y lecciones
+    python orquestador.py regla-eventos          # cuánto se movió el activo en los eventos pasados y cómo viene la regla nueva
     python orquestador.py research               # agentes de research sobre SPY: 1 a 3 candidatos o "no hay trade"
     python orquestador.py research --sin-modelo  # mismo circuito sin llamar a Claude (solo cálculos)
     python orquestador.py informe                # informe de datos de SPY del día
@@ -195,6 +196,33 @@ def cmd_repaso(broker: Broker, args: argparse.Namespace) -> None:
         print(f"\nGuardado en {base.with_suffix('.md').relative_to(Path(__file__).parent)}")
 
 
+def cmd_regla_eventos(broker: Broker, args: argparse.Namespace) -> None:
+    """Qué hace la regla de eventos nueva: los movimientos medidos y los trades que dejó tomar."""
+    from agentes import config
+    from agentes.comparacion_eventos import comparar, escribir, formatear
+    from datos.cadena import hoy_nueva_york
+    from datos.reaccion_eventos import reacciones
+
+    hoy = hoy_nueva_york()
+    for simbolo in args.simbolos:
+        barras = broker.barras_diarias(simbolo, date(hoy.year - config.BACKTEST_DESDE_ANIOS, 1, 1), hoy)
+        print(f"\nCUÁNTO SE MOVIÓ {simbolo} EN LOS EVENTOS DEL PASADO (cierre a cierre, el día del evento o el siguiente)")
+        print("  evento      casos   típico    p90    peor      peor día     >1%")
+        for tipo, x in reacciones(barras, hasta=hoy).items():
+            if not x["eventos"]:
+                print(f"  {tipo:<10}  sin datos")
+                continue
+            print(
+                f"  {tipo:<10} {x['eventos']:>5}  {x['mediana_pct']:>6.2f}% {x['p90_pct']:>6.2f}% "
+                f"{x['peor_pct']:>6.2f}%  {x['peor_fecha']}  {x['arriba_1_pct']:>5.0%}"
+            )
+    c = comparar()
+    print()
+    print(formatear(c))
+    if not args.sin_guardar:
+        print(f"Guardado en {escribir(c=c).relative_to(Path(__file__).parent)}")
+
+
 def cmd_ejecutar(broker: Broker, args: argparse.Namespace) -> None:
     from agentes.bitacora import leer_decisiones, leer_ejecuciones, leer_trades
     from agentes.ejecucion import abrir, decision_pendiente, formatear
@@ -343,6 +371,14 @@ def armar_parser() -> argparse.ArgumentParser:
     no.add_argument("--modelo", default=None, help="Modelo de Claude para el agente News (por defecto Sonnet).")
     no.add_argument("--sin-guardar", action="store_true", help="No escribe bitacora/noticias.jsonl.")
     no.set_defaults(func=cmd_noticias)
+
+    re_ = sub.add_parser(
+        "regla-eventos",
+        help="Movimiento histórico del activo en Fed, CPI y empleo, y comparación de la regla nueva con la vieja.",
+    )
+    re_.add_argument("--simbolos", nargs="+", type=str.upper, default=list(config.UNIVERSO))
+    re_.add_argument("--sin-guardar", action="store_true", help="No escribe bitacora/regla-eventos.md.")
+    re_.set_defaults(func=cmd_regla_eventos)
 
     ge = sub.add_parser("gestionar", help="Revisa las posiciones abiertas y cierra según el plan (simula sin --enviar).")
     ge.add_argument("--enviar", action="store_true", help="Envía las órdenes de cierre a la cuenta paper.")

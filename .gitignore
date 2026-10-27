@@ -3,6 +3,7 @@ __pycache__/
 .venv/
 .env
 bitacora/*.jsonl
+bitacora/regla-eventos.md
 bitacora/*.csv
 datos/cache/
 datos/informes/

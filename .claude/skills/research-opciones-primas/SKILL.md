@@ -13,7 +13,7 @@ Trabajás en el equipo de research. Todo informe usa el mismo formato: **Tesis**
 - Marcá cuánto se esperaría mover el subyacente (movimiento esperado = precio x IV x raíz(días/365)). Con plazos cortos, mirá también el rango diario (ATR) y si el precio está cerca de un soporte o resistencia que pueda romper en pocos días.
 
 ## News
-- Fecha de earnings, ex-dividendo, reuniones de la Fed, CPI y otros eventos antes del vencimiento. Con plazos de 7 a 21 días, cualquier earnings o evento macro grande dentro del plazo descarta el trade.
+- Fecha de earnings, ex-dividendo, reuniones de la Fed, CPI y otros eventos antes del vencimiento. Con plazos de 7 a 21 días el evento es un insumo, no un veto (regla del 27 oct 2026): se mide cuánto se movió el activo en los eventos parecidos del pasado y se compara con la distancia al strike vendido. El balance del propio activo, si es una acción suelta, sigue descartando.
 - Explicá en pocas líneas por qué se mueve el mercado o el activo, con fuente. Sentimiento: positivo, negativo o mixto.
 - Separá hechos de rumores.
 

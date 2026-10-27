@@ -15,23 +15,71 @@ DIAS_MAX = 21
 DELTA_VENDIDO_MIN = 0.10
 DELTA_VENDIDO_MAX = 0.20
 DELTA_OBJETIVO = 0.15
-# Eventos macro que descartan cualquier vencimiento que los incluya.
+# Eventos macro grandes: Fed, CPI y empleo. Antes descartaban cualquier
+# vencimiento que los incluyera; desde el 27 oct 2026 se operan con criterio
+# (ver MODO_EVENTOS más abajo).
 TIPOS_EVENTO_GRANDE = ("fed", "inflacion", "empleo")
 ESTRUCTURAS_PERMITIDAS = ("spread_put", "spread_call", "iron_condor")
 
 # Semana de prueba en paper: el usuario pidió (20 oct 2026) que ningún evento
-# dentro del plazo descarte el trade, ni earnings ni Fed, CPI o empleo, para
-# ver a los agentes operar. Hasta esta fecha inclusive los eventos son una
-# alerta que pesan el consejo y el jefe; después vuelven a descartar.
+# dentro del plazo descarte el trade. Venció el 23 oct y quedó solo como
+# excepción histórica: la regla que manda ahora es MODO_EVENTOS.
 IGNORAR_EVENTOS_HASTA = date(2026, 10, 23)
+
+# --- Regla de eventos (cambio pedido por el usuario el 27 oct 2026) --------
+# "operar": el evento es un insumo, no un veto. El agente News arma la tesis
+#   del evento (qué pasó la vez anterior, qué espera el mercado, su propio
+#   pronóstico) y en código se mide cuánto se movió el activo en los eventos
+#   parecidos del pasado (datos/reaccion_eventos.py). El trade se descarta solo
+#   si el strike vendido queda más cerca que ese movimiento típico.
+# "vetar": la regla vieja, cualquier evento grande dentro del plazo descarta.
+MODO_EVENTOS = os.environ.get("AGENTES_MODO_EVENTOS", "operar")
+
+# Percentil del movimiento histórico que se le exige de colchón al strike
+# vendido. 50 es la mediana (el día típico del evento); 75 y 90 son cada vez
+# más conservadores y dejan pasar menos trades.
+PERCENTIL_COLCHON = float(os.environ.get("AGENTES_PERCENTIL_COLCHON", "50"))
+# Percentil que se usa solo para avisar y para el escenario de estrés.
+PERCENTIL_COLCHON_ESTRES = 90.0
+# Earnings del propio subyacente (una acción suelta, no un ETF): sigue
+# descartando. Un balance mueve a la acción mucho más que cualquier macro.
+EARNINGS_PROPIO_VETA = True
+# Movimiento supuesto de una acción el día de su balance, en porcentaje. Para
+# un ETF se pondera por el peso de la empresa en el índice.
+MOVIMIENTO_EARNINGS_PCT = 6.0
+# Pesos aproximados (oct 2026) de las empresas de mayor peso, para estimar
+# cuánto le pega al ETF el balance de una sola de ellas.
+PESOS_MAYORES = {
+    "SPY": {"NVDA": 0.075, "MSFT": 0.065, "AAPL": 0.060, "AMZN": 0.040, "GOOGL": 0.040, "META": 0.025},
+    "QQQ": {"NVDA": 0.095, "MSFT": 0.080, "AAPL": 0.075, "AMZN": 0.055, "GOOGL": 0.050, "META": 0.030},
+    "SMH": {"NVDA": 0.200, "TSM": 0.110, "AVGO": 0.090, "AMD": 0.050, "ASML": 0.045, "MU": 0.040},
+}
+# Con un evento macro dentro del plazo, el tope de contratos se multiplica por
+# esto (1.0 lo desactiva). Las peores pérdidas de un evento son mucho peores
+# que las de un día normal: el tamaño es la protección más barata.
+FACTOR_CONTRATOS_EVENTO = float(os.environ.get("AGENTES_FACTOR_CONTRATOS_EVENTO", "0.5"))
 
 
 def eventos_descartan(hoy: date) -> bool:
-    return hoy > IGNORAR_EVENTOS_HASTA
+    """True si la regla vieja (evento = veto) está vigente."""
+    return MODO_EVENTOS != "operar" and hoy > IGNORAR_EVENTOS_HASTA
 
 
 def regla_eventos(hoy: date) -> str:
     """La regla de eventos vigente, para las instrucciones de los agentes."""
+    if MODO_EVENTOS == "operar":
+        return (
+            "REGLA DE EVENTOS (cambiada por el usuario el 27 oct 2026): un evento dentro del plazo NO descarta "
+            "el trade. Los eventos se operan: hay que entender qué puede hacer el evento y decidir con eso. "
+            "Datos que te pasan en el mensaje: 'reaccion_historica' (cuánto se movió este activo en los Fed, CPI "
+            "y empleo del pasado: mediana, percentil 90 y peor día) y 'colchon_eventos' de cada candidato (ese "
+            "movimiento típico comparado con la distancia al strike vendido). Vender prima antes de un evento "
+            "cobra más IV y después viene la caída de volatilidad, pero las peores pérdidas son mucho peores: "
+            f"mirá el peor caso, no el promedio. Un candidato se descarta en código solo si el strike vendido "
+            f"queda más cerca que el movimiento típico (percentil {PERCENTIL_COLCHON:g}) de los eventos del plazo. "
+            "El balance de una empresa suelta mueve al índice en proporción a su peso (NVDA o MSFT pesan mucho "
+            "más que el resto); un macro (Fed, CPI, empleo) mueve al índice entero."
+        )
     if eventos_descartan(hoy):
         return (
             "Cualquier earnings (del activo o de las empresas de mayor peso de un ETF) o evento macro grande "

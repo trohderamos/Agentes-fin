@@ -77,11 +77,18 @@ def _valor(candidato: dict, s: float, dias: float, suba_iv: float) -> float:
     return total
 
 
-def escenarios(candidato: dict, precio: float, atr: Optional[float]) -> list[dict]:
-    """Pérdida estimada si en 2 días el precio se mueve en contra."""
+def escenarios(candidato: dict, precio: float, atr: Optional[float], colchon: Optional[dict] = None) -> list[dict]:
+    """Pérdida estimada si en 2 días el precio se mueve en contra.
+
+    Con un evento dentro del plazo se suma el escenario del mal día del evento
+    (percentil 90 histórico): es el riesgo que la regla nueva acepta correr.
+    """
     movimientos = [("3%", precio * 0.03)]
     if atr:
         movimientos.insert(0, ("2 ATR", 2 * atr))
+    estres = (colchon or {}).get("colchon_estres_pct")
+    if estres:
+        movimientos.append((f"mal día de los eventos del plazo ({estres:.2f}%)", precio * estres / 100))
     lados = []
     if any(p["tipo"] == "put" and p["lado"] == "venta" for p in candidato["patas"]):
         lados.append(("baja", -1, 0.05))  # cuando el mercado cae, la IV sube
@@ -322,7 +329,7 @@ async def debatir(
         trade=trade,
         alternativas=[x for x in candidatos if x is not trade],
         costos=costos(c),
-        escenarios=escenarios(c, research["precio"], atr),
+        escenarios=escenarios(c, research["precio"], atr, (trade.get("revision") or {}).get("colchon")),
         plan_por_defecto=plan_por_defecto(c),
         orden_por_defecto=orden_por_defecto(c, trade["revision"]["contratos_max"]),
         con_modelo=modelo is not None,
@@ -342,6 +349,8 @@ async def debatir(
         "informe_fundamentals": research.get("fundamentals"),
         "informe_strategy": research.get("strategy"),
         "informe_risk": research.get("risk"),
+        "reaccion_historica_a_los_eventos": research.get("reaccion_historica"),
+        "tesis_de_los_eventos": (research.get("news") or {}).get("vista_eventos", []),
         "freno": research.get("freno"),
         "costos_calculados": d.costos,
         "escenarios_de_perdida": d.escenarios,
