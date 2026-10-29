@@ -203,7 +203,16 @@ Tu informe es el que más lee el usuario, así que es el que más claro tiene qu
   golpe", DESCARTAR es "hoy no".
 - En 'vista_eventos', 'la_vez_anterior' y 'que_espera_el_mercado' se escriben con números y en
   palabras: cuánto dio el dato, cuánto se esperaba y cuánto se movió el activo ese día en por ciento.
-- Si hay trades abiertos, decí siempre qué les pasa a ellos, aunque la respuesta sea "nada cambia"."""
+- Si hay trades abiertos, decí siempre qué les pasa a ellos, aunque la respuesta sea "nada cambia".
+
+Cerrá con 'contexto_mundo', una foto rápida del mundo (es para mirar de reojo, no un informe):
+- 'titulares': 2 o 3 líneas, no más, con lo grande que está pasando en el mundo y que puede mover a
+  los mercados (política, guerras, elecciones, bancos centrales, energía). Cada línea dice el hecho y
+  en media línea por qué nos importa. Si el día está tranquilo, una sola línea diciendo eso.
+- 'precios': petróleo (WTI), gas natural, oro y bitcoin. De cada uno el precio de ahora, cuánto se
+  movió en el día en porcentaje y, si se movió fuerte, media línea de por qué. Con el mercado
+  cerrado, poné el último cierre y aclaralo.
+Buscalo todo de una sola pasada: esta sección no justifica muchas búsquedas."""
 
 TAREA_FUNDAMENTALS = """Evaluá los fundamentals del activo (o del índice, si es un ETF) con búsqueda web:
 valuación contra su historia, crecimiento y revisiones de estimaciones, y riesgos que puedan provocar un
@@ -288,6 +297,36 @@ ESQUEMA_NEWS = esquema_informe(
                 ],
                 "additionalProperties": False,
             },
+        },
+        # Foto rápida del mundo que pidió el usuario el 29 oct 2026. Opcional en el esquema: si el
+        # modelo no la manda, el informe sale igual y la corrida no se cae.
+        "contexto_mundo": {
+            "type": "object",
+            "description": "Foto corta del mundo: 2 o 3 titulares grandes y los precios de referencia.",
+            "properties": {
+                "titulares": {
+                    "type": "array",
+                    "maxItems": 3,
+                    "items": {"type": "string"},
+                    "description": "El hecho y, en media línea, por qué nos importa.",
+                },
+                "precios": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "que": {"type": "string", "description": "petróleo (WTI), gas natural, oro o bitcoin"},
+                            "precio": {"type": "string"},
+                            "variacion_dia": {"type": "string", "description": "en porcentaje, con el signo"},
+                            "comentario": {"type": "string", "description": "media línea, solo si se movió fuerte"},
+                        },
+                        "required": ["que", "precio", "variacion_dia", "comentario"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            "required": ["titulares", "precios"],
+            "additionalProperties": False,
         },
         "veredicto": {"type": "string", "enum": ["SIN EVENTOS", "ALERTA", "DESCARTAR"]},
         "motivo_veredicto": {"type": "string"},

@@ -43,7 +43,9 @@ Esta revisión se lee sola, sin el resto del ciclo, así que tiene que explicars
   lo que es ("el iron condor de QQQ que vence el 10 de noviembre"), decí qué precio lo pone en
   problemas y a qué distancia está hoy, en por ciento.
 - "vigilar" quiere decir mirarlo más seguido, no cerrarlo; "cerrar" quiere decir que la tesis con la
-  que lo abrimos ya no vale. Decilo así."""
+  que lo abrimos ya no vale. Decilo así.
+- La foto del mundo de 'contexto_mundo' va igual. Si el mercado todavía no abrió, usá el último
+  cierre (y los futuros si los encontrás) y aclaralo en una palabra."""
 )
 
 ESQUEMA_GUARDIA = copy.deepcopy(ESQUEMA_NEWS)
@@ -154,6 +156,22 @@ QUE_SIGNIFICA_LA_AMENAZA = {
 }
 
 
+def seccion_mundo(c: Optional[dict]) -> list[str]:
+    """La foto rápida del mundo: dos o tres titulares y los precios de referencia."""
+    if not c:
+        return []
+    lineas = ["", "  EL MUNDO HOY (de reojo, no mueve la decisión)"]
+    for t in (c.get("titulares") or [])[:3]:
+        lineas.append(f"    - {t}")
+    precios = c.get("precios") or []
+    if precios:
+        lineas.append("    Precios de referencia:")
+        for p in precios:
+            fila = f"      {p.get('que')}: {p.get('precio')} ({p.get('variacion_dia')} en el día)"
+            lineas.append(fila + (f" · {p['comentario']}" if p.get("comentario") else ""))
+    return lineas
+
+
 def formatear_noticias(d: dict) -> str:
     """El informe de News, con la conclusión arriba y el glosario al pie."""
     veredicto = d.get("veredicto") or "-"
@@ -192,6 +210,7 @@ def formatear_noticias(d: dict) -> str:
             cuando = f"{e['fecha']} {e.get('hora', '')}".strip()
             estado = "fecha confirmada" if e.get("confirmado") else "fecha estimada"
             lineas.append(f"    {cuando} · {e['evento']} ({e.get('tipo', '')}, {estado})")
+    lineas += seccion_mundo(d.get("contexto_mundo"))
     if d.get("veto_duro"):
         lineas += ["", f"  FRENO: {d.get('motivo_veto_duro', '')}"]
     return con_glosario("\n".join(lineas))

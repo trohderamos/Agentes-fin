@@ -150,9 +150,16 @@ TERMINOS: dict[str, tuple[tuple[str, ...], str]] = {
 }
 
 
+# Frases donde la palabra del glosario quiere decir otra cosa: no cuentan como término.
+# "prima de riesgo" no es la prima que cobramos y "gas natural" no es el precio natural.
+FALSOS_AMIGOS = ("prima de riesgo", "gas natural", "recursos naturales", "delta del río")
+
+
 def glosario_de(texto: str, maximo: int = 10) -> list[str]:
-    """Las líneas del glosario para los términos que aparecen en ese texto."""
+    """Las líneas del glosario para los términos que aparecen de verdad en ese texto."""
     bajo = texto.lower()
+    for frase in FALSOS_AMIGOS:
+        bajo = bajo.replace(frase, "")
     lineas = []
     for nombre, (disparadores, explicacion) in TERMINOS.items():
         if any(d in bajo for d in disparadores):

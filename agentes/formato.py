@@ -10,6 +10,7 @@ verdad aparecieron.
 from __future__ import annotations
 
 from agentes.glosario import con_glosario, envolver as _envolver
+from agentes.noticias import seccion_mundo
 from agentes.research import ResultadoResearch
 
 
@@ -110,6 +111,8 @@ def formatear_research(r: ResultadoResearch, glosario: bool = True) -> str:
         for e in r.news.get("eventos", []):
             estado = "fecha confirmada" if e.get("confirmado") else "fecha estimada"
             lineas.insert(-1, f"    {e.get('fecha')} {e.get('hora', '')} {e.get('evento')} [impacto {e.get('impacto')}, {estado}]")
+        for linea in seccion_mundo(r.news.get("contexto_mundo")):
+            lineas.insert(-1, linea)
     lineas += _informe("FUNDAMENTALS (cómo viene la empresa o el índice)", r.fundamentals)
     if r.fundamentals and "valuacion" in r.fundamentals:
         f = r.fundamentals
