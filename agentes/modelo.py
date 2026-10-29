@@ -184,9 +184,16 @@ class ModeloClaude:
 
 
 def esquema_informe(extra: dict[str, Any], requeridos_extra: list[str]) -> dict:
-    """Formato común de research: tesis, datos, confianza y qué la invalidaría."""
+    """Formato común de research: la conclusión en criollo, tesis, datos, confianza y qué la invalidaría.
+
+    'en_criollo' va primero a propósito: es lo que lee el usuario. No es obligatorio en el esquema
+    para que una corrida nunca se caiga por falta de ese campo; la consigna de redacción lo pide.
+    """
+    from agentes.glosario import EN_CRIOLLO
+
     propiedades = {
-        "tesis": {"type": "string", "description": "Una frase."},
+        "en_criollo": EN_CRIOLLO,
+        "tesis": {"type": "string", "description": "Una frase, en castellano simple."},
         "datos": {
             "type": "array",
             "items": {"type": "string"},

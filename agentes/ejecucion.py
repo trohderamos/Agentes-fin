@@ -41,6 +41,7 @@ from agentes.bitacora import (
 )
 from agentes.consejo import STOP_VECES_CREDITO, TOMA_GANANCIA, dia_habil_anterior
 from agentes.freno import evaluar_freno
+from agentes.glosario import con_glosario, envolver
 from broker.base import Broker, ContratoOpcion, EstadoOrden, PataOrden
 from datos.iv import simbolo_occ
 
@@ -374,9 +375,22 @@ def gestionar(
                 _, _, tipo, k = parsear_simbolo_occ(p.simbolo)
                 vendidos.append((tipo, k))
         motivo = motivo_de_cierre(t, hoy, medio, broker.precio_subyacente(t.subyacente), vendidos)
-        r.checklist.append(("Débito para cerrar", True, f"medio {medio:.2f}, natural {natural:.2f}, crédito {t.credito}"))
+        # Cuánto dejaría el trade si lo cerráramos en este momento. No decide nada:
+        # es para que el informe diga en plata cómo viene la posición.
+        si_cierro = round(((t.credito or 0) - medio) * 100 * t.contratos, 2)
+        r.checklist.append(
+            (
+                "Cuánto cuesta cerrarlo hoy",
+                True,
+                f"recomprarlo sale {medio:.2f} por acción y cobramos {t.credito}: si cerráramos ahora "
+                f"quedaría en {si_cierro:+,.2f} USD (al precio que se llena seguro, {natural:.2f}, sería peor)",
+            )
+        )
         if motivo is None:
-            r.motivo = "Se mantiene: ninguna regla de salida disparó."
+            r.motivo = (
+                "Se mantiene abierto: no se cumplió ninguna de las condiciones de salida del plan. "
+                f"Si lo cerráramos ahora quedaría en {si_cierro:+,.2f} USD."
+            )
             resultados.append(_cerrar_registro(r, registrar and enviar))
             continue
         reloj = broker.reloj()
@@ -424,15 +438,29 @@ def gestionar(
     return resultados
 
 
+ESTADOS = {
+    "ejecutado": "HECHO, la orden se llenó",
+    "enviado": "MANDADA PERO SIN LLENAR, nadie la tomó al precio que pedimos",
+    "no_enviado": "NO SE MANDÓ NINGUNA ORDEN",
+}
+
+ACCIONES = {"apertura": "ABRIR", "cierre": "CERRAR"}
+
+
 def formatear(resultados: list[Resultado]) -> str:
     if not resultados:
         return "No hay nada para ejecutar ni posiciones abiertas."
     lineas = []
     for r in resultados:
-        estado = "EJECUTADO" if r.ejecutado else ("ENVIADO SIN LLENAR" if r.enviado else "NO ENVIADO")
-        lineas.append(f"{r.accion.upper()} {r.id}: {estado}. {r.motivo}")
-        for nombre, ok, detalle in r.checklist:
-            lineas.append(f"  [{'ok' if ok else 'NO'}] {nombre}" + (f" ({detalle})" if detalle else ""))
-        for i in r.intentos:
-            lineas.append(f"  intento a {i['precio']:.2f}: {i['estado']} ({i['llenados']} llenados)")
-    return "\n".join(lineas)
+        clave = "ejecutado" if r.ejecutado else ("enviado" if r.enviado else "no_enviado")
+        lineas.append(f"{ACCIONES.get(r.accion, r.accion.upper())} {r.id}: {ESTADOS[clave]}.")
+        lineas += envolver(f"Qué pasó: {r.motivo}", sangria="  ") if r.motivo else []
+        if r.checklist:
+            lineas.append("  Controles antes de tocar la cuenta:")
+            for nombre, ok, detalle in r.checklist:
+                lineas.append(f"    [{'ok' if ok else 'NO'}] {nombre}" + (f": {detalle}" if detalle else ""))
+        if r.intentos:
+            lineas.append("  Intentos de llenado (se mejora el precio de a un centavo hasta el tope):")
+            for i in r.intentos:
+                lineas.append(f"    a {i['precio']:.2f} por acción: {i['estado']} ({i['llenados']} patas llenadas)")
+    return con_glosario("\n".join(lineas))

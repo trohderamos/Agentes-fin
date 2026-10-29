@@ -19,6 +19,7 @@ from datetime import date
 from typing import Optional
 
 from agentes.consejo import Debate
+from agentes.glosario import EN_CRIOLLO
 from agentes.modelo import Modelo, Pedido, a_json
 
 DECISIONES = ("APROBAR", "AJUSTAR", "RECHAZAR")
@@ -27,8 +28,9 @@ MAX_VUELTAS = 2
 ESQUEMA_DECISION = {
     "type": "object",
     "properties": {
+        "en_criollo": EN_CRIOLLO,
         "decision": {"type": "string", "enum": list(DECISIONES)},
-        "razon_principal": {"type": "string", "description": "2 o 3 líneas."},
+        "razon_principal": {"type": "string", "description": "2 o 3 líneas, en castellano simple."},
         "objecion_que_mas_peso": {"type": "string"},
         "orden_final": {
             "type": "object",
@@ -68,7 +70,16 @@ Decidí solo: APROBAR, AJUSTAR o RECHAZAR. Si aprobás, dejá la orden final (id
 contratos dentro de 'contratos_max' y precio límite como crédito por acción, no mayor que el punto medio) y
 el plan de salida. Si ajustás, poné en 'cambios_pedidos' los cambios exactos para research. Estás en la
 vuelta 'vuelta' de un máximo de 2: si en la última vuelta seguís sin poder aprobar, rechazá.
-En esta etapa la orden aprobada NO se envía: queda registrada en la bitácora."""
+En esta etapa la orden aprobada NO se envía: queda registrada en la bitácora.
+
+Tu decisión es lo primero que lee el usuario, y muchos días es lo único que lee:
+- En 'en_criollo', explicale la decisión como se la explicarías a un socio por teléfono: qué
+  hacemos, cuánta plata entra hoy, cuánto es lo máximo que podemos perder, qué tiene que pasar para
+  que salga bien y qué nos haría salir antes. Tres o cuatro frases, sin jerga sin explicar.
+- Si rechazás, decí en una frase qué tendría que cambiar para que el mismo trade se apruebe otro día
+  (por ejemplo "si la volatilidad sube y las opciones se pagan más caras").
+- En 'plan_salida', cada regla con su precio y su traducción en plata: "cerramos pagando 1,03, que
+  deja alrededor de 100 dólares de los 205 que cobramos"."""
 
 
 def _sin_modelo(debate: Debate) -> dict:

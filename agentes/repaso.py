@@ -29,6 +29,7 @@ from agentes.bitacora import TradeRegistrado, leer_decisiones, leer_trades
 from agentes.comparacion_eventos import comparar as comparar_regla_eventos
 from agentes.comparacion_eventos import escribir as escribir_regla_eventos
 from agentes.consejo import MIEMBROS, NOMBRES
+from agentes.glosario import COMO_ESCRIBIR
 from agentes.modelo import Modelo, Pedido, cargar_skill, lecciones_aprobadas
 from broker.base import Broker
 from datos.eventos import cargar_eventos
@@ -187,7 +188,15 @@ concretos (un umbral, una regla, un filtro) que habrían evitado los errores o a
 pasar. Cada cambio con la evidencia de la semana. Si toca uno de estos parámetros, indicalo para probarlo
 con el backtest: delta_objetivo (delta del strike vendido, entre 0.10 y 0.20), dias (plazo, entre 7 y 21)
 o ancho_cada_100 (ancho de las alas por cada 100 de precio). Si la muestra es chica, decilo y no fuerces
-cambios. Los cambios NO se aplican: se le proponen al usuario."""
+cambios. Los cambios NO se aplican: se le proponen al usuario.
+
+El repaso lo lee el usuario entero, es el informe más importante de la semana:
+- 'resumen_semana' arranca por cómo terminó la cuenta y por qué, en castellano simple: cuánto cambió
+  el patrimonio (lo que vale la cuenta si cerráramos todo, que es el número que vale, no el efectivo),
+  qué trades se cerraron y cuánto dejó cada uno, y qué quedó abierto con su tesis en una línea.
+- Cada lección se escribe para que se entienda sola: qué pasó esta semana que la motiva, qué cambiaría
+  en la práctica y qué esperaríamos ganar o dejar de perder. Nada de proponer un número sin decir qué
+  significa ese número."""
 
 
 def _probar(barras, cambio: dict) -> Optional[dict]:
@@ -342,6 +351,7 @@ async def repasar(
             f"Semana del {desde.isoformat()} al {hasta.isoformat()}. Escribí en español rioplatense, corto y con cifras.",
             "Usá solo los datos del mensaje. Nunca inventes resultados.",
             "## Tu tarea\n" + TAREA_LECCIONES,
+            COMO_ESCRIBIR,
             "## Skill bitacora-trades\n" + cargar_skill("bitacora-trades"),
             lecciones_aprobadas(),
         ]
@@ -415,12 +425,19 @@ def _texto_regla_eventos(c: dict) -> list[str]:
 
 def formatear_repaso(r: Repaso) -> str:
     l = [f"# Repaso semanal · {r.desde.isoformat()} al {r.hasta.isoformat()}", ""]
+    if r.lecciones and r.lecciones.get("resumen_semana"):
+        l += ["## En una pasada", r.lecciones["resumen_semana"], ""]
     l.append("## Resultado")
     if r.resultado is not None and r.patrimonio_inicio:
         l.append(
             f"Patrimonio de {_usd(r.patrimonio_inicio)} a {_usd(r.patrimonio_fin)}: "
             f"{r.resultado:+,.2f} USD ({r.resultado / r.patrimonio_inicio:+.2%}). "
             f"Peor caída dentro de la semana: {(r.drawdown_semana or 0):.2%}."
+        )
+        l.append(
+            "El patrimonio es lo que vale la cuenta si cerráramos todo hoy: ese es el número que dice cómo "
+            "vamos. El efectivo es más alto porque incluye las primas cobradas, que todavía son deuda hasta "
+            "cerrar cada trade."
         )
     else:
         l.append("Sin datos de patrimonio.")
@@ -436,7 +453,8 @@ def formatear_repaso(r: Repaso) -> str:
             l.append(f"- {t['id']} ({t['contratos']} contratos, crédito {t['credito']}). Por qué: {t['razon_jefe'] or '-'}")
     else:
         l.append("Ninguno.")
-    l += ["", "## Posiciones abiertas"]
+    l += ["", "## Posiciones abiertas", "", "El resultado no realizado es lo que dejaría cada posición si la "
+          "cerráramos hoy; todavía puede cambiar.", ""]
     if r.posiciones_abiertas:
         for t in r.posiciones_abiertas:
             plan = (t.get("plan_salida") or {}).get("cierre_por_tiempo", "-")

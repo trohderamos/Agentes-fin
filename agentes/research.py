@@ -27,6 +27,7 @@ from agentes.backtest import ResultadoBacktest, correr_backtest
 from agentes.bitacora import TradeRegistrado, leer_trades
 from agentes.estructuras import Candidato, anchos_objetivo, armar_candidatos, clave_backtest, resumen_candidato
 from agentes.freno import ResultadoFreno, evaluar_freno
+from agentes.glosario import COMO_ESCRIBIR
 from agentes.modelo import Modelo, Pedido, a_json, cargar_skill, esquema_informe, lecciones_aprobadas
 from agentes.riesgo import Revision, eventos_que_descartan, revisar
 from broker.base import Barra, Broker, Noticia
@@ -148,6 +149,7 @@ def _sistema(agente: str, hoy: date, skills: list[str], tarea: str, subyacente: 
         "Usá solo los datos que te pasan en el mensaje (y lo que encuentres en la web con su fuente, si "
         "tenés búsqueda). Nunca inventes un dato: si falta, anotalo en 'faltantes'.",
         "## Tu tarea\n" + tarea,
+        COMO_ESCRIBIR,
     ]
     if subyacente in config.ACTIVOS_24_7:
         partes.append(
@@ -185,7 +187,23 @@ pronóstico y de qué lado ves el riesgo. En 'movimiento_esperado_pct' poné cu�
 el activo ese día, en porcentaje; en 'reaccion_historica' te paso cuánto se movió de verdad en los
 eventos parecidos del pasado (mediana, percentil 90 y peor día), así podés comparar.
 Ya no vetás por calendario: un evento no descarta el trade. Usá 'veto_duro' solo para algo que los
-números no ven (un fallo judicial, una suspensión de cotización, un dato que cambia la empresa)."""
+números no ven (un fallo judicial, una suspensión de cotización, un dato que cambia la empresa).
+
+Tu informe es el que más lee el usuario, así que es el que más claro tiene que estar:
+- En 'en_criollo', tres o cuatro frases que se entiendan solas: qué pasó, por qué se movió el
+  mercado y qué le cambia eso a nuestros trades. Si alguien que no sabe de opciones lo lee y no
+  entiende qué hacemos con esa noticia, está mal escrito.
+- En 'por_que_se_mueve', una explicación en cadena, no una lista de palabras: qué dato salió, qué
+  hizo el mercado con ese dato y por qué. Cada cifra con su unidad y con su fecha.
+- En 'hechos', una línea por hecho, empezando por lo que nos afecta y terminando con lo que es solo
+  contexto. Un hecho es algo que ya pasó y tiene fuente; lo que todavía no está confirmado va en
+  'rumores', dicho como rumor.
+- En 'motivo_veredicto', decí en una frase qué significa el veredicto para nosotros: SIN EVENTOS es
+  "no hay nada grande en el camino", ALERTA es "hay algo grande pero se puede operar midiendo el
+  golpe", DESCARTAR es "hoy no".
+- En 'vista_eventos', 'la_vez_anterior' y 'que_espera_el_mercado' se escriben con números y en
+  palabras: cuánto dio el dato, cuánto se esperaba y cuánto se movió el activo ese día en por ciento.
+- Si hay trades abiertos, decí siempre qué les pasa a ellos, aunque la respuesta sea "nada cambia"."""
 
 TAREA_FUNDAMENTALS = """Evaluá los fundamentals del activo (o del índice, si es un ETF) con búsqueda web:
 valuación contra su historia, crecimiento y revisiones de estimaciones, y riesgos que puedan provocar un
