@@ -19,6 +19,11 @@ class TestGlosario(unittest.TestCase):
         self.assertIn("delta", texto)
         self.assertNotIn("skew", texto)
 
+    def test_no_se_cuela_por_una_palabra_que_significa_otra_cosa(self):
+        texto = "\n".join(glosario_de("El gas natural subió y la prima de riesgo de la energía también."))
+        self.assertNotIn("natural y medio", texto)
+        self.assertNotIn("la plata que nos pagan por vender", texto)
+
     def test_sin_terminos_no_agrega_pie(self):
         self.assertEqual(con_glosario("Hoy no hubo novedades."), "Hoy no hubo novedades.")
 
@@ -97,6 +102,33 @@ class TestInformeDeNoticias(unittest.TestCase):
             dict(self.BASE, trades_abiertos=[{"id": "QQQ-1", "amenaza": "cerrar", "motivo": "El put quedó cerca."}])
         )
         self.assertIn("CERRAR (la tesis con la que lo abrimos ya no vale)", texto)
+
+    def test_la_foto_del_mundo_sale_corta(self):
+        texto = noticias.formatear_noticias(
+            dict(
+                self.BASE,
+                contexto_mundo={
+                    "titulares": ["Netanyahu fue reelecto: sube la prima de riesgo en energía."],
+                    "precios": [
+                        {"que": "petróleo (WTI)", "precio": "102,40", "variacion_dia": "+3,1%", "comentario": "por Irán"},
+                        {"que": "bitcoin", "precio": "71.200", "variacion_dia": "-0,8%", "comentario": ""},
+                    ],
+                },
+            )
+        )
+        self.assertIn("EL MUNDO HOY", texto)
+        self.assertIn("Netanyahu", texto)
+        self.assertIn("petróleo (WTI): 102,40 (+3,1% en el día) · por Irán", texto)
+        self.assertIn("bitcoin: 71.200 (-0,8% en el día)", texto)
+
+    def test_sin_foto_del_mundo_no_aparece_la_seccion(self):
+        self.assertNotIn("EL MUNDO HOY", noticias.formatear_noticias(dict(self.BASE)))
+        self.assertEqual(noticias.seccion_mundo(None), [])
+
+    def test_la_foto_del_mundo_es_opcional_en_el_esquema(self):
+        self.assertIn("contexto_mundo", research.ESQUEMA_NEWS["properties"])
+        self.assertNotIn("contexto_mundo", research.ESQUEMA_NEWS["required"])
+        self.assertNotIn("contexto_mundo", noticias.ESQUEMA_GUARDIA["required"])
 
     def test_anda_sin_los_campos_nuevos(self):
         texto = noticias.formatear_noticias(dict(self.BASE))
