@@ -18,6 +18,7 @@ from typing import Any, Optional
 
 from agentes import config
 from agentes.estructuras import resumen_candidato
+from agentes.glosario import COMO_ESCRIBIR, EN_CRIOLLO
 from agentes.modelo import Modelo, Pedido, a_json, cargar_skill, lecciones_aprobadas
 from datos.calculos import precio_bs
 
@@ -147,19 +148,25 @@ def orden_por_defecto(candidato: dict, contratos_max: int) -> dict:
 
 TAREAS = {
     "ejecutor": "Armá la orden concreta (id del candidato, cantidad de contratos dentro de 'contratos_max' y "
-    "precio límite como crédito por acción, cerca del punto medio y nunca mayor que él) y defendé la entrada con cifras.",
+    "precio límite como crédito por acción, cerca del punto medio y nunca mayor que él) y defendé la entrada con cifras. "
+    "Decí en plata: cuánto cobramos hoy por vender esta estructura, cuánto es lo máximo que podemos ganar y cuánto "
+    "lo máximo que podemos perder, y entre qué precios el trade no pierde.",
     "esceptico": "Buscá cómo pierde plata el trade. Usá los escenarios calculados y dá al menos un escenario "
-    "concreto de pérdida con su magnitud en dólares. Revisá si el backtest es confiable.",
+    "concreto de pérdida con su magnitud en dólares. Revisá si el backtest es confiable. Contá el escenario como una "
+    "historia corta: qué tendría que pasar, en qué precio, y cuánta plata perderíamos ahí.",
     "gestor": "Escribí el plan de salida (tomar ganancia, stop, cierre por tiempo, qué hacer si toca el strike). "
-    "Podés partir del plan por defecto y ajustarlo. Sin plan escrito tu voto es AJUSTAR.",
+    "Podés partir del plan por defecto y ajustarlo. Sin plan escrito tu voto es AJUSTAR. Cada regla del plan con su "
+    "número y su traducción: a qué precio se hace, qué significa eso en plata y por qué.",
     "liquidez": "Revisá el spread de compra y venta y los costos calculados. Si los costos se comen más del 15% "
-    "del crédito o no se puede salir con facilidad, votá EN CONTRA.",
+    "del crédito o no se puede salir con facilidad, votá EN CONTRA. Decí el costo también en dólares, no solo en "
+    "porcentaje del crédito.",
 }
 
 ESQUEMA_POSTURA = {
     "type": "object",
     "properties": {
-        "postura": {"type": "string", "description": "Corta, con cifras."},
+        "en_criollo": EN_CRIOLLO,
+        "postura": {"type": "string", "description": "Corta, con cifras, y cada término técnico explicado al pasar."},
         "respuesta_a_otros": {"type": "string", "description": "Solo en la segunda ronda; vacío en la primera."},
         "voto": {"type": "string", "enum": list(VOTOS)},
         "cambio_propuesto": {"type": "string", "description": "Si el voto es AJUSTAR, el cambio concreto."},
@@ -252,8 +259,9 @@ def sistema_comun(hoy: date, contexto: dict) -> str:
         [
             "Sos parte del consejo o el jefe de un sistema que vende primas de opciones en una cuenta paper "
             f"(dinero simulado). Hoy es {hoy.isoformat()}. Tu rol y tu tarea vienen en el mensaje. Escribí en "
-            "español rioplatense, corto y con cifras.",
+            "español rioplatense, corto y con cifras, de manera que lo entienda alguien que no es experto.",
             "Usá solo los datos de estas instrucciones y del mensaje. Nunca inventes precios, strikes ni datos de mercado.",
+            COMO_ESCRIBIR,
             config.regla_eventos(hoy),
             "## Skill consejo-opciones-primas\n" + cargar_skill("consejo-opciones-primas"),
             "## Skill jefe-opciones-primas (solo para el jefe)\n" + cargar_skill("jefe-opciones-primas"),

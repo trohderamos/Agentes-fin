@@ -40,16 +40,28 @@ def _num(valor: Optional[float], decimales: int = 2) -> str:
 
 
 def mostrar_cuenta(cuenta: Cuenta) -> str:
+    """La cuenta con cada número explicado: el que vale para saber cómo vamos es el patrimonio."""
     lineas = [
         "CUENTA PAPER (dinero simulado)",
-        f"  Número:                  {cuenta.numero}",
-        f"  Estado:                  {cuenta.estado}",
-        f"  Patrimonio:              {_num(cuenta.patrimonio)} {cuenta.moneda}",
-        f"  Efectivo:                {_num(cuenta.efectivo)} {cuenta.moneda}",
-        f"  Poder de compra:         {_num(cuenta.poder_de_compra)} {cuenta.moneda}",
-        f"  Poder de compra opciones: {_num(cuenta.poder_de_compra_opciones)} {cuenta.moneda}",
-        f"  Nivel de opciones:       {cuenta.nivel_opciones if cuenta.nivel_opciones is not None else '-'}",
+        f"  Número: {cuenta.numero} · Estado: {cuenta.estado}",
+        "",
+        f"  CÓMO VAMOS (patrimonio): {_num(cuenta.patrimonio)} {cuenta.moneda}",
+        "    Es lo que vale la cuenta hoy si cerráramos todo ahora mismo. Este es el número que vale.",
+        f"  Efectivo: {_num(cuenta.efectivo)} {cuenta.moneda}",
+        "    Es la plata suelta e incluye las primas que cobramos, que todavía son deuda hasta cerrar",
+        "    los trades. Por eso casi siempre parece más de lo que realmente tenemos.",
+        f"  Poder de compra: {_num(cuenta.poder_de_compra)} {cuenta.moneda}"
+        f" · para opciones: {_num(cuenta.poder_de_compra_opciones)} {cuenta.moneda}",
+        "    Cuánto nos deja arriesgar el bróker, contando lo que ya tenemos comprometido.",
+        f"  Nivel de opciones: {cuenta.nivel_opciones if cuenta.nivel_opciones is not None else '-'}",
     ]
+    if cuenta.patrimonio is not None and cuenta.efectivo is not None:
+        abierto = round(cuenta.patrimonio - cuenta.efectivo, 2)
+        lineas += [
+            "",
+            f"  Diferencia entre los dos: {abierto:+,.2f} {cuenta.moneda}. Es lo que valen hoy las posiciones",
+            "    abiertas. Si da negativo, recomprarlas cuesta más de lo que cobramos: vamos perdiendo en ellas.",
+        ]
     return "\n".join(lineas)
 
 

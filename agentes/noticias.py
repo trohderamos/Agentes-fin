@@ -18,6 +18,7 @@ from zoneinfo import ZoneInfo
 
 from agentes import config
 from agentes.bitacora import TradeRegistrado, leer_trades
+from agentes.glosario import con_glosario, envolver as _envolver
 from agentes.modelo import Modelo, Pedido
 from agentes.research import ESQUEMA_NEWS, MAYORES_DEL_INDICE, TAREA_NEWS, _evento, _json, _noticia, _sistema
 from broker.base import Broker
@@ -33,7 +34,16 @@ Esta es una revisión fuera del ciclo (a la mañana o a la tarde): no hay candid
 Contá qué cambió desde las revisiones anteriores de hoy, si las hay. Para cada trade abierto de este
 activo, decí en 'trades_abiertos' si algo amenaza su tesis: "ninguna", "vigilar" o "cerrar"
 (por ejemplo un evento de impacto alto nuevo antes del vencimiento, o una noticia que puede mover el
-precio hasta el strike vendido). No das órdenes: el gestor de posición decide con su plan."""
+precio hasta el strike vendido). No das órdenes: el gestor de posición decide con su plan.
+
+Esta revisión se lee sola, sin el resto del ciclo, así que tiene que explicarse sola:
+- Empezá 'en_criollo' por la novedad del momento y por qué importa. Si no hubo novedad, decilo con
+  todas las letras ("no cambió nada desde la revisión de la mañana") en vez de repetir lo de antes.
+- En 'motivo' de cada trade abierto, escribí para alguien que no se acuerda del trade: nombralo por
+  lo que es ("el iron condor de QQQ que vence el 10 de noviembre"), decí qué precio lo pone en
+  problemas y a qué distancia está hoy, en por ciento.
+- "vigilar" quiere decir mirarlo más seguido, no cerrarlo; "cerrar" quiere decir que la tesis con la
+  que lo abrimos ya no vale. Decilo así."""
 )
 
 ESQUEMA_GUARDIA = copy.deepcopy(ESQUEMA_NEWS)
@@ -130,17 +140,58 @@ def notas_de_hoy(subyacente: str, hoy: date, archivo: Path = ARCHIVO_NOTICIAS) -
     return notas
 
 
+# Qué quiere decir cada veredicto, para que no haya que acordarse.
+QUE_SIGNIFICA_EL_VEREDICTO = {
+    "SIN EVENTOS": "no hay nada grande en el camino hasta el vencimiento",
+    "ALERTA": "hay algo grande en el camino, se puede operar midiendo el golpe",
+    "DESCARTAR": "hoy no conviene abrir nada en este activo",
+}
+
+QUE_SIGNIFICA_LA_AMENAZA = {
+    "ninguna": "sigue todo igual, no hay que hacer nada",
+    "vigilar": "hay que mirarlo más seguido, pero todavía no se cierra",
+    "cerrar": "la tesis con la que lo abrimos ya no vale",
+}
+
+
 def formatear_noticias(d: dict) -> str:
-    lineas = [f"NOTICIAS {d['subyacente']} · {d['fecha']} {d['hora']}"]
-    lineas.append(f"  Sentimiento: {d.get('sentimiento')}. {d.get('por_que_se_mueve', '')}")
-    for h in d.get("hechos", [])[:6]:
-        lineas.append(f"  - {h}")
+    """El informe de News, con la conclusión arriba y el glosario al pie."""
+    veredicto = d.get("veredicto") or "-"
+    lineas = [
+        f"NOTICIAS {d['subyacente']} · {d['fecha']} {d['hora']}",
+        "",
+        f"  EN UNA LÍNEA: {veredicto}"
+        + (f" ({QUE_SIGNIFICA_EL_VEREDICTO[veredicto]})" if veredicto in QUE_SIGNIFICA_EL_VEREDICTO else "")
+        + (f". {d.get('motivo_veredicto', '')}" if d.get("motivo_veredicto") else ""),
+    ]
+    if d.get("en_criollo"):
+        lineas += ["", *_envolver(d["en_criollo"])]
+    if d.get("trades_abiertos"):
+        lineas += ["", "  QUÉ LES PASA A NUESTROS TRADES ABIERTOS"]
+        for t in d["trades_abiertos"]:
+            amenaza = (t.get("amenaza") or "").lower()
+            lineas.append(
+                f"    {t['id']}: {amenaza.upper()}"
+                + (f" ({QUE_SIGNIFICA_LA_AMENAZA[amenaza]})" if amenaza in QUE_SIGNIFICA_LA_AMENAZA else "")
+            )
+            lineas += _envolver(t.get("motivo", ""), sangria="      ")
+    lineas += ["", f"  POR QUÉ SE MUEVE (clima del día: {d.get('sentimiento')})"]
+    lineas += _envolver(d.get("por_que_se_mueve", ""), sangria="    ")
+    if d.get("hechos"):
+        lineas += ["", "  LO QUE YA PASÓ (con fuente)"]
+        for h in d.get("hechos", [])[:6]:
+            lineas.append(f"    - {h}")
     if d.get("rumores"):
-        lineas.append("  Rumores: " + "; ".join(d["rumores"][:3]))
-    for e in d.get("eventos", []):
-        if e.get("impacto") == "alto":
-            lineas.append(f"  Evento alto: {e['fecha']} {e.get('hora', '')} {e['evento']} ({e.get('tipo', '')})")
-    lineas.append(f"  Veredicto: {d.get('veredicto')} {d.get('motivo_veredicto', '')}")
-    for t in d.get("trades_abiertos", []):
-        lineas.append(f"  Trade {t['id']}: amenaza {t['amenaza'].upper()}. {t['motivo']}")
-    return "\n".join(lineas)
+        lineas += ["", "  LO QUE TODAVÍA ES RUMOR (sin confirmar)"]
+        for r in d["rumores"][:3]:
+            lineas.append(f"    - {r}")
+    altos = [e for e in d.get("eventos", []) if e.get("impacto") == "alto"]
+    if altos:
+        lineas += ["", "  EVENTOS GRANDES EN EL CAMINO (los que pueden mover el precio de golpe)"]
+        for e in altos:
+            cuando = f"{e['fecha']} {e.get('hora', '')}".strip()
+            estado = "fecha confirmada" if e.get("confirmado") else "fecha estimada"
+            lineas.append(f"    {cuando} · {e['evento']} ({e.get('tipo', '')}, {estado})")
+    if d.get("veto_duro"):
+        lineas += ["", f"  FRENO: {d.get('motivo_veto_duro', '')}"]
+    return con_glosario("\n".join(lineas))
